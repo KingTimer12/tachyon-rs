@@ -1,0 +1,16 @@
+[package]
+name = "tachyon"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi           = { workspace = true, optional = true }
+napi-derive    = { workspace = true, optional = true }
+tachyon-core = { workspace = true }
+
+[build-dependencies]
+napi-build = { version = "2", optional = true }
+
+[features]
+enable-napi = ["napi", "napi-derive", "napi-build"]
