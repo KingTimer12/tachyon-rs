@@ -1,0 +1,470 @@
+// Comprehensive benchmark: Tachyon vs Fastify vs Express vs http.Server
+// Run with: node examples/full-benchmark.js
+
+import { tachyon } from "../dist/index.js";
+import { spawn, execSync } from "child_process";
+import http from "http";
+
+const DURATION = 10; // seconds
+const CONNECTIONS = 100;
+const PIPELINING = 10;
+const WARMUP_REQUESTS = 1000;
+
+const PORT_TACHYON = 3001;
+const PORT_FASTIFY = 3002;
+const PORT_EXPRESS = 3003;
+const PORT_HTTP = 3004;
+
+// Colors for output
+const colors = {
+  reset: "\x1b[0m",
+  bright: "\x1b[1m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  blue: "\x1b[34m",
+  cyan: "\x1b[36m",
+  red: "\x1b[31m",
+  magenta: "\x1b[35m",
+};
+
+function log(color, ...args) {
+  console.log(color, ...args, colors.reset);
+}
+
+// Check if autocannon is available
+function checkAutocannon() {
+  try {
+    execSync("which autocannon", { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Warmup server
+async function warmup(port) {
+  return new Promise((resolve) => {
+    let completed = 0;
+    for (let i = 0; i < WARMUP_REQUESTS; i++) {
+      const req = http.get(`http://localhost:${port}/`, (res) => {
+        res.on("data", () => {});
+        res.on("end", () => {
+          completed++;
+          if (completed >= WARMUP_REQUESTS) resolve();
+        });
+      });
+      req.on("error", () => {
+        completed++;
+        if (completed >= WARMUP_REQUESTS) resolve();
+      });
+      req.end();
+    }
+  });
+}
+
+// Run autocannon benchmark
+function runBenchmark(name, port) {
+  return new Promise((resolve, reject) => {
+    log(colors.cyan, `\n🚀 Benchmarking ${name} on port ${port}...`);
+
+    const autocannon = spawn("autocannon", [
+      "-c",
+      CONNECTIONS.toString(),
+      "-d",
+      DURATION.toString(),
+      "-p",
+      PIPELINING.toString(),
+      "-j",
+      `http://localhost:${port}/`,
+    ]);
+
+    let output = "";
+    let errorOutput = "";
+
+    autocannon.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+
+    autocannon.stderr.on("data", (data) => {
+      errorOutput += data.toString();
+    });
+
+    autocannon.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`Benchmark failed: ${errorOutput}`));
+        return;
+      }
+      try {
+        const result = JSON.parse(output);
+        resolve({
+          name,
+          port,
+          requests: result.requests.total,
+          throughput: result.throughput.total,
+          latency: {
+            avg: result.latency.average,
+            p50: result.latency.p50,
+            p90: result.latency.p90,
+            p99: result.latency.p99,
+            max: result.latency.max,
+          },
+          rps: result.requests.average,
+          errors: result.errors,
+        });
+      } catch (e) {
+        reject(new Error(`Failed to parse results: ${e.message}`));
+      }
+    });
+  });
+}
+
+// Simple HTTP benchmark without autocannon
+function runSimpleBenchmark(name, port) {
+  return new Promise((resolve) => {
+    log(
+      colors.cyan,
+      `\n🚀 Running simple benchmark for ${name} on port ${port}...`,
+    );
+
+    const requests = 50000;
+    let completed = 0;
+    let errors = 0;
+    const start = process.hrtime.bigint();
+    const latencies = [];
+
+    const makeRequest = () => {
+      const reqStart = process.hrtime.bigint();
+
+      const req = http.get(`http://localhost:${port}/`, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          const reqEnd = process.hrtime.bigint();
+          latencies.push(Number(reqEnd - reqStart) / 1_000_000);
+          completed++;
+          if (completed < requests) {
+            setImmediate(makeRequest);
+          } else {
+            finish();
+          }
+        });
+      });
+
+      req.on("error", () => {
+        errors++;
+        completed++;
+        if (completed < requests) {
+          setImmediate(makeRequest);
+        } else {
+          finish();
+        }
+      });
+
+      req.end();
+    };
+
+    const finish = () => {
+      const end = process.hrtime.bigint();
+      const duration = Number(end - start) / 1_000_000_000;
+
+      latencies.sort((a, b) => a - b);
+
+      resolve({
+        name,
+        port,
+        requests: completed,
+        errors,
+        duration: duration.toFixed(2),
+        rps: Math.round(completed / duration),
+        latency: {
+          avg: (
+            latencies.reduce((a, b) => a + b, 0) / latencies.length
+          ).toFixed(2),
+          p50:
+            latencies[Math.floor(latencies.length * 0.5)]?.toFixed(2) || "N/A",
+          p90:
+            latencies[Math.floor(latencies.length * 0.9)]?.toFixed(2) || "N/A",
+          p99:
+            latencies[Math.floor(latencies.length * 0.99)]?.toFixed(2) || "N/A",
+          max: Math.max(...latencies).toFixed(2),
+        },
+      });
+    };
+
+    const concurrency = 100;
+    for (let i = 0; i < concurrency; i++) {
+      makeRequest();
+    }
+  });
+}
+
+// Start Tachyon server
+function startTachyon() {
+  return new Promise((resolve) => {
+    const app = tachyon();
+
+    app.get("/", ({ response }) => {
+      return response({ message: "Hello, World!" });
+    });
+
+    app.listen(PORT_TACHYON, () => {
+      log(colors.green, `✓ Tachyon started on port ${PORT_TACHYON}`);
+      setTimeout(resolve, 500);
+    });
+  });
+}
+
+// Start Fastify server
+async function startFastify() {
+  return new Promise(async (resolve) => {
+    try {
+      const { default: Fastify } = await import("fastify");
+      const fastify = Fastify({ logger: false });
+
+      fastify.get("/", async () => {
+        return { message: "Hello, World!" };
+      });
+
+      await fastify.listen({ port: PORT_FASTIFY });
+      log(colors.green, `✓ Fastify started on port ${PORT_FASTIFY}`);
+      setTimeout(() => resolve(fastify), 500);
+    } catch (e) {
+      log(colors.yellow, "⚠ Fastify not available, skipping...");
+      resolve(null);
+    }
+  });
+}
+
+// Start Express server
+async function startExpress() {
+  return new Promise(async (resolve) => {
+    try {
+      const { default: express } = await import("express");
+      const app = express();
+
+      app.get("/", (req, res) => {
+        res.json({ message: "Hello, World!" });
+      });
+
+      const server = app.listen(PORT_EXPRESS, () => {
+        log(colors.green, `✓ Express started on port ${PORT_EXPRESS}`);
+        setTimeout(() => resolve(server), 500);
+      });
+    } catch (e) {
+      log(colors.yellow, "⚠ Express not available, skipping...");
+      resolve(null);
+    }
+  });
+}
+
+// Start raw http.Server
+function startHttpServer() {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      if (req.url === "/" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ message: "Hello, World!" }));
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    server.listen(PORT_HTTP, () => {
+      log(colors.green, `✓ http.Server started on port ${PORT_HTTP}`);
+      setTimeout(() => resolve(server), 500);
+    });
+  });
+}
+
+// Print results table
+function printResults(results) {
+  log(colors.bright, "\n" + "═".repeat(80));
+  log(colors.bright, "📊 BENCHMARK RESULTS");
+  log(colors.bright, "═".repeat(80));
+
+  // Sort by RPS descending
+  results.sort((a, b) => b.rps - a.rps);
+
+  console.log(
+    "\n┌─────────────────┬───────────────┬──────────────┬──────────────┬──────────┐",
+  );
+  console.log(
+    "│ Framework       │ Requests/sec  │ Latency avg  │ Latency p99  │ Errors   │",
+  );
+  console.log(
+    "├─────────────────┼───────────────┼──────────────┼──────────────┼──────────┤",
+  );
+
+  const medals = ["🥇", "🥈", "🥉", "  "];
+
+  results.forEach((r, i) => {
+    const medal = medals[Math.min(i, 3)];
+    const name = (r.name + "              ").slice(0, 13);
+    const rps = (r.rps.toLocaleString() + "            ").slice(0, 11);
+    const avgLat = ((r.latency.avg || "N/A") + " ms         ").slice(0, 10);
+    const p99Lat = ((r.latency.p99 || "N/A") + " ms         ").slice(0, 10);
+    const errors = ((r.errors || 0) + "        ").slice(0, 6);
+
+    console.log(
+      `│ ${medal} ${name} │ ${rps}   │ ${avgLat}   │ ${p99Lat}   │ ${errors}   │`,
+    );
+  });
+
+  console.log(
+    "└─────────────────┴───────────────┴──────────────┴──────────────┴──────────┘",
+  );
+
+  // Calculate comparisons
+  if (results.length >= 2) {
+    const tachyon = results.find((r) => r.name === "Tachyon");
+    if (tachyon) {
+      log(colors.bright, "\n📈 PERFORMANCE COMPARISON (vs Tachyon)");
+      console.log(
+        "┌─────────────────┬────────────────┬────────────────┐",
+      );
+      console.log(
+        "│ Framework       │ Speed Ratio    │ Latency Ratio  │",
+      );
+      console.log(
+        "├─────────────────┼────────────────┼────────────────┤",
+      );
+
+      results.forEach((r) => {
+        const name = (r.name + "              ").slice(0, 13);
+        const speedRatio = (tachyon.rps / r.rps).toFixed(2) + "x";
+        const latRatio =
+          (parseFloat(r.latency.avg) / parseFloat(tachyon.latency.avg)).toFixed(
+            2,
+          ) + "x";
+        const speedStr = (speedRatio + "            ").slice(0, 12);
+        const latStr = (latRatio + "            ").slice(0, 12);
+
+        console.log(`│   ${name} │ ${speedStr}   │ ${latStr}   │`);
+      });
+
+      console.log(
+        "└─────────────────┴────────────────┴────────────────┘",
+      );
+    }
+  }
+
+  // Detailed latency breakdown
+  log(colors.bright, "\n📊 LATENCY BREAKDOWN (ms)");
+  console.log(
+    "┌─────────────────┬──────────┬──────────┬──────────┬──────────┬──────────┐",
+  );
+  console.log(
+    "│ Framework       │ Average  │ p50      │ p90      │ p99      │ Max      │",
+  );
+  console.log(
+    "├─────────────────┼──────────┼──────────┼──────────┼──────────┼──────────┤",
+  );
+
+  results.forEach((r) => {
+    const name = (r.name + "              ").slice(0, 13);
+    const avg = ((r.latency.avg || "N/A") + "       ").slice(0, 6);
+    const p50 = ((r.latency.p50 || "N/A") + "       ").slice(0, 6);
+    const p90 = ((r.latency.p90 || "N/A") + "       ").slice(0, 6);
+    const p99 = ((r.latency.p99 || "N/A") + "       ").slice(0, 6);
+    const max = ((r.latency.max || "N/A") + "       ").slice(0, 6);
+
+    console.log(
+      `│   ${name} │ ${avg}   │ ${p50}   │ ${p90}   │ ${p99}   │ ${max}   │`,
+    );
+  });
+
+  console.log(
+    "└─────────────────┴──────────┴──────────┴──────────┴──────────┴──────────┘",
+  );
+}
+
+// Main
+async function main() {
+  log(colors.bright, "\n" + "═".repeat(70));
+  log(colors.bright, "🔥 TACHYON FULL BENCHMARK - High Performance HTTP Framework");
+  log(colors.bright, "═".repeat(70));
+
+  const hasAutocannon = checkAutocannon();
+  if (!hasAutocannon) {
+    log(colors.yellow, "\n⚠ autocannon not found. Using simple benchmark.");
+    log(
+      colors.yellow,
+      "  For better results, install: npm install -g autocannon\n",
+    );
+  }
+
+  const benchmarkFn = hasAutocannon ? runBenchmark : runSimpleBenchmark;
+  const results = [];
+  const servers = [];
+
+  // Start servers
+  log(colors.blue, "\n📦 Starting servers...");
+
+  await startTachyon();
+  const fastify = await startFastify();
+  const express = await startExpress();
+  const httpServer = await startHttpServer();
+
+  if (fastify) servers.push(fastify);
+  if (express) servers.push(express);
+  servers.push(httpServer);
+
+  // Wait for servers to be ready
+  await new Promise((r) => setTimeout(r, 1000));
+
+  // Warmup
+  log(colors.blue, "\n🔥 Warming up servers...");
+  await warmup(PORT_TACHYON);
+  if (fastify) await warmup(PORT_FASTIFY);
+  if (express) await warmup(PORT_EXPRESS);
+  await warmup(PORT_HTTP);
+  log(colors.green, "   Warmup complete!");
+
+  // Run benchmarks
+  log(colors.blue, "\n🏁 Running benchmarks...");
+  log(
+    colors.blue,
+    `   Duration: ${hasAutocannon ? DURATION : "varies"}s per framework`,
+  );
+  log(colors.blue, `   Connections: ${hasAutocannon ? CONNECTIONS : 100}`);
+
+  try {
+    // Benchmark Tachyon
+    const tachyonResult = await benchmarkFn("Tachyon", PORT_TACHYON);
+    results.push(tachyonResult);
+
+    // Benchmark Fastify
+    if (fastify) {
+      const fastifyResult = await benchmarkFn("Fastify", PORT_FASTIFY);
+      results.push(fastifyResult);
+    }
+
+    // Benchmark Express
+    if (express) {
+      const expressResult = await benchmarkFn("Express", PORT_EXPRESS);
+      results.push(expressResult);
+    }
+
+    // Benchmark raw http
+    const httpResult = await benchmarkFn("http.Server", PORT_HTTP);
+    results.push(httpResult);
+
+    // Print results
+    printResults(results);
+  } catch (error) {
+    log(colors.red, `\n❌ Benchmark error: ${error.message}`);
+  }
+
+  // Cleanup
+  log(colors.blue, "\n🧹 Cleaning up...");
+
+  if (fastify) await fastify.close();
+  if (express) express.close();
+  httpServer.close();
+
+  log(colors.green, "\n✅ Full benchmark complete!\n");
+  process.exit(0);
+}
+
+main().catch(console.error);

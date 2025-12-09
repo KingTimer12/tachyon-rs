@@ -1,11 +1,12 @@
 [package]
 name = "tachyon-core"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 serde          = { workspace = true }
 serde_json     = { workspace = true }
+simd-json      = { workspace = true }
 tokio          = { workspace = true }
 ahash          = { workspace = true }
 async-trait    = { workspace = true }
@@ -15,3 +16,11 @@ http-body-util = { workspace = true }
 hyper          = { workspace = true }
 hyper-util     = { workspace = true }
 itoa           = { workspace = true }
+parking_lot    = { workspace = true }
+smallvec       = { workspace = true }
+mimalloc       = { workspace = true }
+thread_local   = { workspace = true }
+arc-swap       = { workspace = true }
+rustc-hash     = { workspace = true }
+memchr         = { workspace = true }
+socket2        = { workspace = true }

@@ -1,41 +1,21 @@
-[package]
-name = "tachyon"
-version = "0.1.0"
-edition = "2024"
-authors = ["AaronKing <aaron.cmfor@gmail.com>"]
-license = "MIT"
-repository = "https://github.com/aaronkingdev/tachyon"
-
-[lib]
-path = "src/lib/src/lib.rs"
-crate-type = ["cdylib"]
-
-[dependencies]
-napi           = { workspace = true, optional = true }
-napi-derive    = { workspace = true, optional = true }
-tachyon-core = { workspace = true }
-
-[build-dependencies]
-napi-build = { version = "2", optional = true }
-
-[features]
-enable-napi = ["napi", "napi-derive", "napi-build"]
-
 [workspace]
 resolver = "2"
 
 members = [
-    "src/core"
+    "src/core",
+    "src/lib",
+    "src/napi"
 ]
 
 [workspace.dependencies]
 tachyon-core = { path = "src/core" }
 
 napi           = { version = "3", features = ["async", "serde-json"] }
-napi-derive    = "3.0.0"
+napi-derive    = "3"
 
 serde          = { version = "1.0.225", features = ["derive"] }
 serde_json     = "1.0.145"
+simd-json      = "0.14"
 tokio          = { version = "1", features = ["full"] }
 ahash          = "0.8"
 async-trait    = "0.1.89"
@@ -45,6 +25,15 @@ http-body-util = "0.1.3"
 hyper          = { version = "1", features = ["full"] }
 hyper-util     = { version = "0.1", features = ["full"] }
 itoa           = "1.0"
+parking_lot    = "0.12"
+crossbeam-channel = "0.5"
+smallvec       = { version = "1.13", features = ["union", "const_generics"] }
+mimalloc       = { version = "0.1", default-features = false }
+thread_local   = "1.1"
+arc-swap       = "1.7"
+rustc-hash     = "2.0"
+memchr         = "2.7"
+socket2        = { version = "0.5", features = ["all"] }
 
  # Optimization
 
@@ -55,6 +44,8 @@ opt-level = 3               # Maximum optimization
 overflow-checks = false     # Disable overflow checks for speed
 panic = "abort"             # Smaller and faster panic handler
 strip = "symbols"           # Strip symbols to reduce binary size
+debug = false               # No debug info in release
+incremental = false         # Disable incremental for better optimization
 
 [profile.release.package."*"]
 opt-level = 3               # Optimize all dependencies too

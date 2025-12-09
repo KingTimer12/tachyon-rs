@@ -1,14 +1,62 @@
 {
-  "name": "tachyon-rs",
-  "module": "index.ts",
+  "name": "tachyon",
+  "version": "0.1.0",
+  "description": "High-performance, minimalist web framework powered by Rust",
   "type": "module",
-  "devDependencies": {
-    "@types/bun": "latest"
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./deno": {
+      "types": "./dist/deno.d.ts",
+      "import": "./dist/deno.js"
+    }
   },
-  "peerDependencies": {
-    "typescript": "^5"
+  "files": [
+    "dist",
+    "napi.*.node",
+    "target/release/*.so",
+    "target/release/*.dll",
+    "target/release/*.dylib"
+  ],
+  "keywords": [
+    "web-framework",
+    "http",
+    "rust",
+    "performance",
+    "minimalist",
+    "napi",
+    "ffi",
+    "node",
+    "bun",
+    "deno"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.10.0",
+    "express": "^5.2.1",
+    "fastify": "^5.6.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsc && bun build src/ --outdir dist/ --minify --target=node"
+    "build": "npm run build:native && npm run build:ts",
+    "build:ts": "tsc",
+    "build:native": "cd tachyon && npm run build",
+    "build:napi": "cd tachyon && npm run build:napi",
+    "build:ffi": "cd tachyon && npm run build:ffi",
+    "deps": "cd tachyon && npm run deps",
+    "test": "echo \"Tests coming soon\"",
+    "clean": "rm -rf dist && cd tachyon && cargo clean"
+  },
+  "dependencies": {
+    "@napi-rs/cli": "^3.5.0"
   }
 }

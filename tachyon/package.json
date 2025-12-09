@@ -1,17 +1,21 @@
 {
   "name": "tachyon-core",
+  "version": "0.1.0",
   "napi": {
-    "name": "napi"
+    "binaryName": "napi",
+    "packageName": "tachyon-core"
   },
   "dependencies": {
-    "@napi-rs/cli": "^2.10.1",
-    "@node-rs/helper": "^1.3.3"
+    "@node-rs/helper": "^1.6.0"
   },
   "scripts": {
-    "deps": "bun install",
-    "build:ffi": "cargo build --release",
-    "build": "bun run build:napi && bun run build:ffi",
-    "cleanup": "mv napi.*.node ../",
-    "build:napi": "napi build --release --platform --no-dts-header --features enable-napi && bun run cleanup"
+    "deps": "npm install",
+    "build:ffi": "cargo build --release --manifest-path src/lib/Cargo.toml",
+    "build:napi": "napi build --release --platform --no-dts-header --manifest-path src/napi/Cargo.toml && npm run cleanup",
+    "build": "npm run build:napi && npm run build:ffi",
+    "cleanup": "mv src/napi/napi.*.node ./"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.5.0"
   }
 }

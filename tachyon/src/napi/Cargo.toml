@@ -1,0 +1,25 @@
+[package]
+name = "tachyon-napi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi           = { workspace = true }
+napi-derive    = { workspace = true }
+tachyon-core   = { workspace = true }
+bytes          = { workspace = true }
+serde_json     = { workspace = true }
+simd-json      = { workspace = true }
+serde          = { workspace = true }
+parking_lot    = { workspace = true }
+crossbeam-channel = { workspace = true }
+mimalloc       = { workspace = true }
+arc-swap       = { workspace = true }
+rustc-hash     = { workspace = true }
+smallvec       = { workspace = true }
+
+[build-dependencies]
+napi-build = { version = "2" }

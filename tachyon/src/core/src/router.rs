@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::options::TachyonOptions;
+use crate::options::{ResponseData, TachyonOptions};
 
-pub type TachyonHandler = Arc<Box<dyn Fn(TachyonOptions) + Send + Sync + 'static>>;
+pub type TachyonHandler = Arc<dyn Fn(TachyonOptions) -> ResponseData + Send + Sync + 'static>;
 
 pub struct TachyonRouter {
     method: u8,
@@ -12,14 +12,11 @@ pub struct TachyonRouter {
 impl TachyonRouter {
     pub fn new<F>(method: u8, handler: Arc<F>) -> Self
     where
-        F: Fn(TachyonOptions) + Send + Sync + 'static,
+        F: Fn(TachyonOptions) -> ResponseData + Send + Sync + 'static,
     {
-        let boxed_handler: Box<dyn Fn(TachyonOptions) + Send + Sync + 'static> =
-            Box::new(move |opt| (*handler)(opt));
-
         Self {
             method,
-            handler: Arc::new(boxed_handler),
+            handler: handler as TachyonHandler,
         }
     }
 
@@ -27,7 +24,7 @@ impl TachyonRouter {
         self.method
     }
 
-    pub fn handler(&self) -> &Arc<Box<dyn Fn(TachyonOptions) + Send + Sync + 'static>> {
+    pub fn handler(&self) -> &TachyonHandler {
         &self.handler
     }
 }
