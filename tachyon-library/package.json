@@ -1,0 +1,14 @@
+{
+  "name": "tachyon-rs",
+  "module": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "@tachyon-rs/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

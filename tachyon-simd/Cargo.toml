@@ -1,0 +1,12 @@
+[package]
+name = "tachyon-simd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cxx = "1"
+
+[build-dependencies]
+cxx-build = "1"

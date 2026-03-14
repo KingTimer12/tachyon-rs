@@ -1,0 +1,15 @@
+[package]
+name = "tachyon-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+simd = ["dep:tachyon-simd"]
+
+[dependencies]
+tachyon-simd = { path = "../tachyon-simd", optional = true }
+tachyon-http = { path = "../tachyon-http", features = ["simd"] }
+tachyon-pool = { path = "../tachyon-pool" }
+may = { workspace = true }

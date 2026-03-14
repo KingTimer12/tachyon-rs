@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["tachyon-core","tachyon-http", "tachyon-pool", "tachyon-napi", "tachyon-simd"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kingtimer/turbine"
+
+[workspace.dependencies]
+may = "0.3"
+napi = "3"
+napi-derive = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release-debug]
+inherits = "release"
+strip = false
+debug = true
