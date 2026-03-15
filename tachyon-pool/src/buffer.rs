@@ -79,8 +79,15 @@ impl BufferPool {
 
 impl BufGuard {
     /// The writable slice of the buffer (up to full capacity).
+    /// After a pool round-trip (release → acquire), the Vec's len may be 0
+    /// due to clear(). We restore it to capacity so the full buffer is writable.
     pub fn as_write_buf(&mut self) -> &mut [u8] {
-        self.buf.as_mut().unwrap().as_mut_slice()
+        let buf = self.buf.as_mut().unwrap();
+        let cap = buf.capacity();
+        if buf.len() < cap {
+            buf.resize(cap, 0);
+        }
+        buf.as_mut_slice()
     }
 
     /// Mark `n` bytes as written. Used after a raw read syscall.

@@ -6,7 +6,7 @@ members = ["tachyon-core","tachyon-http", "tachyon-pool", "tachyon-napi", "tachy
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/kingtimer/turbine"
+repository = "https://github.com/KingTimer12/tachyon-rs"
 
 [workspace.dependencies]
 may = "0.3"

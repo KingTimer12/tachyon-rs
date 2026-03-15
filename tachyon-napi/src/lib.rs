@@ -28,15 +28,15 @@ fn method_str(m: tachyon_http::methods::Method) -> &'static str {
 /// Server configuration exposed to TypeScript.
 ///
 /// ```typescript
-/// import { TurbineRawConfig } from 'turbine';
+/// import { TachyonRawConfig } from 'tachyon';
 ///
-/// const config = new TurbineRawConfig();
+/// const config = new TachyonRawConfig();
 /// config.bindAddr = '0.0.0.0:8080';
 /// config.workers = 4;
 /// ```
 #[napi(object)]
 #[derive(Debug, Clone)]
-pub struct TurbineRawConfig {
+pub struct TachyonRawConfig {
     /// Address to bind (default: "0.0.0.0:3000")
     pub bind_addr: Option<String>,
     /// Number of worker threads (default: CPU count)
@@ -63,8 +63,8 @@ pub struct TurbineRawConfig {
     pub send_buf_size: Option<i32>,
 }
  
-impl From<TurbineRawConfig> for tachyon_core::config::ServerConfig {
-    fn from(ts: TurbineRawConfig) -> Self {
+impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
+    fn from(ts: TachyonRawConfig) -> Self {
         let mut config = tachyon_core::config::ServerConfig::new();
         if let Some(addr) = ts.bind_addr {
             config = config.bind(&addr);
@@ -105,17 +105,17 @@ impl From<TurbineRawConfig> for tachyon_core::config::ServerConfig {
     }
 }
 
-/// The Turbine server instance.
+/// The Tachyon server instance.
 ///
 /// ```typescript
-/// import { TachyonRawServer } from 'turbine';
+/// import { TachyonRawServer } from 'tachyon';
 ///
 /// const server = new TachyonRawServer({ bindAddr: '0.0.0.0:8080' });
 ///
 /// // The handler runs in Rust coroutines — fast, safe, cross-platform
 /// server.start((req) => ({
 ///     status: 200,
-///     body: JSON.stringify({ message: 'Hello from Turbine!' }),
+///     body: JSON.stringify({ message: 'Hello from Tachyon!' }),
 /// }));
 /// ```
 #[napi]
@@ -126,7 +126,7 @@ pub struct TachyonRawServer {
 #[napi]
 impl TachyonRawServer {
     #[napi(constructor)]
-    pub fn new(config: Option<TurbineRawConfig>) -> Self {
+    pub fn new(config: Option<TachyonRawConfig>) -> Self {
         let config = config
             .map(|c| c.into())
             .unwrap_or_else(tachyon_core::config::ServerConfig::new);
@@ -136,7 +136,7 @@ impl TachyonRawServer {
     /// Start the server with a JavaScript handler function.
     ///
     /// The handler is called for each HTTP request from a Rust coroutine.
-    /// It receives a `TurbineRequest` and must return a `TurbineResponse`.
+    /// It receives a `TachyonRequest` and must return a `TachyonResponse`.
     ///
     /// The server runs on background threads — Node's event loop stays free.
     #[napi]

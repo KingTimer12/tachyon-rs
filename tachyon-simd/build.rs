@@ -22,6 +22,7 @@ fn main() {
     let mut build = cxx_build::bridge("src/lib.rs");
 
     build.file("cpp/simd_scan.cpp");
+    build.file("cpp/rio.cpp");
     build.include("cpp");
 
     if has_simdjson {
@@ -33,10 +34,17 @@ fn main() {
 
     build.std("c++17");
 
+    let is_msvc = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default() == "msvc";
+
     match target_arch.as_str() {
         "x86_64" | "x86" => {
-            build.flag_if_supported("-msse4.2");
-            build.flag_if_supported("-mavx2");
+            if is_msvc {
+                // MSVC: SSE4.2 is on by default for x64; enable AVX2 explicitly
+                build.flag_if_supported("/arch:AVX2");
+            } else {
+                build.flag_if_supported("-msse4.2");
+                build.flag_if_supported("-mavx2");
+            }
         }
         "aarch64" => {}
         _ => {
@@ -48,7 +56,10 @@ fn main() {
 
     match target_os.as_str() {
         "linux" => { build.define("_GNU_SOURCE", None); }
-        "windows" => { println!("cargo:rustc-link-lib=ws2_32"); }
+        "windows" => {
+            println!("cargo:rustc-link-lib=ws2_32");
+            println!("cargo:rustc-link-lib=mswsock");
+        }
         _ => {}
     }
 
@@ -62,6 +73,8 @@ fn main() {
 
     println!("cargo:rerun-if-changed=cpp/simd_scan.h");
     println!("cargo:rerun-if-changed=cpp/simd_scan.cpp");
+    println!("cargo:rerun-if-changed=cpp/rio.h");
+    println!("cargo:rerun-if-changed=cpp/rio.cpp");
     println!("cargo:rerun-if-changed=src/lib.rs");
     if has_simdjson {
         println!("cargo:rerun-if-changed=cpp/vendor/simdjson.h");

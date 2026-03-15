@@ -63,7 +63,7 @@ impl SocketConfig {
     }
 }
 
-/// Configuration for a Turbine server instance.
+/// Configuration for a Tachyon server instance.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     /// Address to bind (default: "0.0.0.0:3000")

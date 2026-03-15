@@ -7,19 +7,47 @@
 #include <cstring>
 
 // Platform detection for SIMD
-#if defined(__SSE4_2__)
-#include <nmmintrin.h>
-#define TACHYON_HAS_SSE42 1
-#endif
-
-#if defined(__AVX2__)
-#include <immintrin.h>
-#define TACHYON_HAS_AVX2 1
+//
+// MSVC does not define __SSE4_2__ or __AVX2__ like GCC/Clang.
+// On MSVC x86_64, SSE4.2 is always available; AVX2 requires /arch:AVX2.
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_AMD64))
+  #include <intrin.h>
+  #include <immintrin.h>
+  #ifndef TACHYON_HAS_SSE42
+    #define TACHYON_HAS_SSE42 1
+  #endif
+  // MSVC defines __AVX2__ when /arch:AVX2 is used
+  #if defined(__AVX2__)
+    #define TACHYON_HAS_AVX2 1
+  #endif
+#else
+  #if defined(__SSE4_2__)
+    #include <nmmintrin.h>
+    #define TACHYON_HAS_SSE42 1
+  #endif
+  #if defined(__AVX2__)
+    #include <immintrin.h>
+    #define TACHYON_HAS_AVX2 1
+  #endif
 #endif
 
 #if defined(__ARM_NEON) || defined(__aarch64__)
 #include <arm_neon.h>
 #define TACHYON_HAS_NEON 1
+#endif
+
+// Cross-platform count-trailing-zeros
+#if defined(_MSC_VER)
+#include <intrin.h>
+static inline int tachyon_ctz(uint32_t mask) {
+    unsigned long idx;
+    _BitScanForward(&idx, mask);
+    return static_cast<int>(idx);
+}
+#else
+static inline int tachyon_ctz(uint32_t mask) {
+    return __builtin_ctz(mask);
+}
 #endif
 
 namespace tachyon {
@@ -60,7 +88,7 @@ static ScanResult find_header_end_sse42(const uint8_t* buf, size_t len) {
         int mask = _mm_movemask_epi8(cmp);
 
         while (mask) {
-            int bit = __builtin_ctz(mask);
+            int bit = tachyon_ctz(mask);
             size_t pos = i + bit;
 
             if (pos + 3 < len &&
@@ -100,7 +128,7 @@ static ScanResult find_header_end_avx2(const uint8_t* buf, size_t len) {
         int mask = _mm256_movemask_epi8(cmp);
 
         while (mask) {
-            int bit = __builtin_ctz(mask);
+            int bit = tachyon_ctz(mask);
             size_t pos = i + bit;
 
             if (pos + 3 < len &&
@@ -198,7 +226,7 @@ ScanResult find_byte_simd(rust::Slice<const uint8_t> buf, uint8_t needle) {
         __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + i));
         int mask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, target));
         if (mask) {
-            return {i + static_cast<size_t>(__builtin_ctz(mask)), true};
+            return {i + static_cast<size_t>(tachyon_ctz(mask)), true};
         }
     }
     for (; i < len; i++) {
@@ -213,7 +241,7 @@ ScanResult find_byte_simd(rust::Slice<const uint8_t> buf, uint8_t needle) {
         __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr + i));
         int mask = _mm_movemask_epi8(_mm_cmpeq_epi8(chunk, target));
         if (mask) {
-            return {i + static_cast<size_t>(__builtin_ctz(mask)), true};
+            return {i + static_cast<size_t>(tachyon_ctz(mask)), true};
         }
     }
     for (; i < len; i++) {
@@ -251,7 +279,7 @@ size_t validate_token_simd(rust::Slice<const uint8_t> buf) {
         int mask = _mm256_movemask_epi8(valid);
         if (mask != -1) { // not all valid
             int inv = ~mask;
-            return i + static_cast<size_t>(__builtin_ctz(inv));
+            return i + static_cast<size_t>(tachyon_ctz(inv));
         }
     }
     for (; i < len; i++) {
@@ -404,25 +432,33 @@ size_t serialize_json(
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mswsock.h>
 #pragma comment(lib, "ws2_32.lib")
+
+// SIO_LOOPBACK_FAST_PATH: bypasses TCP stack for localhost connections.
+// Available on Windows 8+ / Server 2012+. Huge speedup for local benchmarks.
+#ifndef SIO_LOOPBACK_FAST_PATH
+#define SIO_LOOPBACK_FAST_PATH 0x98000010
+#endif
 #endif
 
-int32_t apply_socket_tuning(int32_t fd, const SocketTuning& t) {
+int32_t apply_socket_tuning(int64_t fd, const SocketTuning& t) {
     int32_t last_err = 0;
 
 #if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
+    int sock = static_cast<int>(fd);
     int val;
 
     if (t.tcp_nodelay) {
         val = 1;
-        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) < 0)
+        if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) < 0)
             last_err = -errno;
     }
 
 #ifdef SO_REUSEPORT
     if (t.reuse_port) {
         val = 1;
-        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val)) < 0)
+        if (setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val)) < 0)
             last_err = -errno;
     }
 #endif
@@ -430,7 +466,7 @@ int32_t apply_socket_tuning(int32_t fd, const SocketTuning& t) {
 #if defined(__linux__) && defined(TCP_FASTOPEN)
     if (t.tcp_fastopen) {
         val = 5; // queue length for TFO
-        if (setsockopt(fd, IPPROTO_TCP, TCP_FASTOPEN, &val, sizeof(val)) < 0)
+        if (setsockopt(sock, IPPROTO_TCP, TCP_FASTOPEN, &val, sizeof(val)) < 0)
             last_err = -errno;
     }
 #endif
@@ -438,44 +474,75 @@ int32_t apply_socket_tuning(int32_t fd, const SocketTuning& t) {
 #if defined(__linux__) && defined(SO_BUSY_POLL)
     if (t.busy_poll_us > 0) {
         val = t.busy_poll_us;
-        if (setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL, &val, sizeof(val)) < 0)
+        if (setsockopt(sock, SOL_SOCKET, SO_BUSY_POLL, &val, sizeof(val)) < 0)
             last_err = -errno;
     }
 #endif
 
     if (t.recv_buf_size > 0) {
         val = t.recv_buf_size;
-        if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &val, sizeof(val)) < 0)
+        if (setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &val, sizeof(val)) < 0)
             last_err = -errno;
     }
 
     if (t.send_buf_size > 0) {
         val = t.send_buf_size;
-        if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)) < 0)
+        if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)) < 0)
             last_err = -errno;
     }
 
 #elif defined(_WIN32)
-    // Windows socket tuning
+    // Windows: fd is actually a SOCKET handle (uintptr_t cast to i64)
+    SOCKET sock = static_cast<SOCKET>(fd);
     BOOL bval;
+    DWORD dwBytes = 0;
 
     if (t.tcp_nodelay) {
         bval = TRUE;
-        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
+        if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
                         reinterpret_cast<const char*>(&bval), sizeof(bval)) < 0)
             last_err = -WSAGetLastError();
     }
 
+    // SO_EXCLUSIVEADDRUSE: prevents other processes from binding to our port.
+    // This is critical security on Windows — without it, another process can
+    // bind to the same port and intercept traffic (port hijacking).
+    // Must be set BEFORE bind(), but we apply it anyway for sockets that support it.
+    if (!t.reuse_port) {
+        bval = TRUE;
+        setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                   reinterpret_cast<const char*>(&bval), sizeof(bval));
+        // Non-fatal if this fails (e.g., already bound)
+    } else {
+        bval = TRUE;
+        if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+                        reinterpret_cast<const char*>(&bval), sizeof(bval)) < 0)
+            last_err = -WSAGetLastError();
+    }
+
+    // SIO_LOOPBACK_FAST_PATH: bypasses the full TCP/IP stack for loopback
+    // connections. On Windows 8+, this eliminates the loopback adapter overhead.
+    // Always safe to enable — only affects localhost connections.
+    {
+        int optval = 1;
+        WSAIoctl(sock, SIO_LOOPBACK_FAST_PATH,
+                 &optval, sizeof(optval),
+                 nullptr, 0, &dwBytes, nullptr, nullptr);
+        // Silently ignore failure (pre-Win8 or non-TCP socket)
+    }
+
     if (t.recv_buf_size > 0) {
         int val = t.recv_buf_size;
-        setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
-                   reinterpret_cast<const char*>(&val), sizeof(val));
+        if (setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+                   reinterpret_cast<const char*>(&val), sizeof(val)) < 0)
+            last_err = -WSAGetLastError();
     }
 
     if (t.send_buf_size > 0) {
         int val = t.send_buf_size;
-        setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
-                   reinterpret_cast<const char*>(&val), sizeof(val));
+        if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+                   reinterpret_cast<const char*>(&val), sizeof(val)) < 0)
+            last_err = -WSAGetLastError();
     }
 #endif
 

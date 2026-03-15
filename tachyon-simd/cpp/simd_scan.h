@@ -50,10 +50,10 @@ size_t serialize_json(
     rust::Slice<uint8_t> out_buf
 );
 
-// Apply all tuning options to a raw file descriptor.
+// Apply all tuning options to a raw file descriptor (Unix) or SOCKET handle (Windows).
 // Returns 0 on success, -errno on failure.
 // Each option is applied independently — failure of one doesn't block others.
-int32_t apply_socket_tuning(int32_t fd, const SocketTuning& tuning);
+int32_t apply_socket_tuning(int64_t fd, const SocketTuning& tuning);
 
 } // namespace simd
 } // namespace tachyon

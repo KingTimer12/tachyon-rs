@@ -1,4 +1,4 @@
-//! # turbine-simd
+//! # tachyon-simd
 //!
 //! SIMD-accelerated hot path routines via cxx bridge to C/C++.
 //!
@@ -50,6 +50,7 @@ mod ffi {
 
     unsafe extern "C++" {
         include!("tachyon-simd/cpp/simd_scan.h");
+        include!("tachyon-simd/cpp/rio.h");
 
         /// Find \r\n\r\n in buffer using SIMD.
         /// Auto-dispatches: AVX2 > SSE4.2 > NEON > scalar.
@@ -68,12 +69,45 @@ mod ffi {
         /// Serialize JSON fields into buffer. Returns bytes written.
         fn serialize_json(fields: &[JsonValue], out_buf: &mut [u8]) -> usize;
 
-        /// Apply socket tuning options to a file descriptor.
-        fn apply_socket_tuning(fd: i32, tuning: &SocketTuning) -> i32;
+        /// Apply socket tuning options to a file descriptor (Unix) or SOCKET handle (Windows).
+        fn apply_socket_tuning(fd: i64, tuning: &SocketTuning) -> i32;
+
+        // --- Registered I/O (RIO) — Windows zero-copy networking ---
+        // On non-Windows, all functions return failure/no-op.
+
+        /// Initialize the RIO function table. Call once at server startup.
+        fn rio_init() -> bool;
+
+        /// Check if RIO was successfully initialized.
+        fn rio_available() -> bool;
+
+        /// Register a buffer for zero-copy I/O. Returns buffer ID or -1.
+        fn rio_register_buffer(buf: &mut [u8]) -> i64;
+
+        /// Deregister a previously registered buffer.
+        fn rio_deregister_buffer(buf_id: i64);
+
+        /// Create a RIO context for a socket. Returns handle or -1.
+        fn rio_create_context(socket_handle: i64) -> i64;
+
+        /// Destroy a RIO context.
+        fn rio_destroy_context(ctx: i64);
+
+        /// Submit a non-blocking receive. Returns 0 or negative error.
+        fn rio_submit_recv(ctx: i64, buf_id: i64, offset: u32, length: u32) -> i32;
+
+        /// Submit a non-blocking send. Returns 0 or negative error.
+        fn rio_submit_send(ctx: i64, buf_id: i64, offset: u32, length: u32) -> i32;
+
+        /// Poll receive completion. >= 0 = bytes, -1 = not ready, < -1 = error.
+        fn rio_poll_recv(ctx: i64) -> i32;
+
+        /// Poll send completion. >= 0 = bytes, -1 = not ready, < -1 = error.
+        fn rio_poll_send(ctx: i64) -> i32;
     }
 }
 
-// Re-export for ergonomic use from turbine-core
+// Re-export for ergonomic use from tachyon-core
 pub use ffi::*;
 
 /// Convenience: find the end of HTTP headers in a buffer.
@@ -110,7 +144,7 @@ pub fn default_tuning() -> SocketTuning {
 }
 
 /// Apply default high-performance socket tuning.
-pub fn tune_socket(fd: i32) -> Result<(), i32> {
+pub fn tune_socket(fd: i64) -> Result<(), i32> {
     let tuning = default_tuning();
     let err = ffi::apply_socket_tuning(fd, &tuning);
     if err == 0 {
