@@ -153,7 +153,14 @@ pub fn write_response_vec(
     custom_headers: &[u8],
     date_header: &[u8],
 ) -> Vec<u8> {
-    let size = response_size(status, content_type, body, security_headers, custom_headers, date_header);
+    let size = response_size(
+        status,
+        content_type,
+        body,
+        security_headers,
+        custom_headers,
+        date_header,
+    );
     let mut buf = Vec::with_capacity(size);
     buf.extend_from_slice(status);
     buf.extend_from_slice(content_type);

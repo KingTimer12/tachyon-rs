@@ -68,15 +68,17 @@ pub fn start_date_cache() {
 
     std::thread::Builder::new()
         .name("tachyon-date".into())
-        .spawn(|| loop {
-            std::thread::sleep(Duration::from_secs(1));
-            let new = Box::into_raw(Box::new(format_date_header()));
-            let old = CACHED_DATE.swap(new, Ordering::AcqRel);
-            // Delay freeing old value to avoid use-after-free from concurrent readers.
-            // Sleep ensures all in-flight reads have completed.
-            std::thread::sleep(Duration::from_millis(50));
-            if !old.is_null() {
-                drop(unsafe { Box::from_raw(old) });
+        .spawn(|| {
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                let new = Box::into_raw(Box::new(format_date_header()));
+                let old = CACHED_DATE.swap(new, Ordering::AcqRel);
+                // Delay freeing old value to avoid use-after-free from concurrent readers.
+                // Sleep ensures all in-flight reads have completed.
+                std::thread::sleep(Duration::from_millis(50));
+                if !old.is_null() {
+                    drop(unsafe { Box::from_raw(old) });
+                }
             }
         })
         .expect("failed to spawn date cache thread");
