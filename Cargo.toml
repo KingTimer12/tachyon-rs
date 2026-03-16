@@ -13,6 +13,10 @@ may = "0.3"
 napi = "3"
 napi-derive = "3"
 
+tachyon-core = { path = "../tachyon-core", features = ["simd"] }
+tachyon-http = { path = "../tachyon-http", features = ["simd"] }
+tachyon-pool = { path = "../tachyon-pool" }
+
 [profile.release]
 opt-level = 3
 lto = "thin"

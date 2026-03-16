@@ -1,19 +1,18 @@
-
 [package]
-authors = ["Aaron King"]
-edition = "2024"
-name = "tachyon-napi"
-version = "0.1.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
 napi = { workspace = true }
-napi-derive = {  workspace = true }
-tachyon-core = { path = "../tachyon-core", features = ["simd"] }
-tachyon-http = { path = "../tachyon-http", features = ["simd"] }
-tachyon-pool = { path = "../tachyon-pool" }
+napi-derive = { workspace = true }
+tachyon-core = { workspace = true }
+tachyon-http = { workspace = true }
+tachyon-pool = { workspace = true }
 
 [build-dependencies]
 napi-build = "2"
