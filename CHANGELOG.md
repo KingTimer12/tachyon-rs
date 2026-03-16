@@ -2,12 +2,24 @@
 
 ## [Unreleased]
 
+### Miscellaneous
+
+- Chore: added date to headers
+fix: content-type wrong for text response ([48b1e1a](https://github.com/KingTimer12/tachyon-rs/commit/48b1e1a2a5c9f99b7dcc54ac715b54d8c58933e2))
+
+### Build
+
+- Bun.lock updated ([1e3742c](https://github.com/KingTimer12/tachyon-rs/commit/1e3742c59538e7492ea69a2c37db60a4d4426673))
+
+## [0.2.11] - 2026-03-16
+
 ### Bug Fixes
 
 - Type error ([6b0f44b](https://github.com/KingTimer12/tachyon-rs/commit/6b0f44bf0830382e911bc11444ccd630135911a3))
 
 ### Miscellaneous
 
+- Release v0.2.11 ([7b2d627](https://github.com/KingTimer12/tachyon-rs/commit/7b2d6273f88322169b89e0c28183c5982a41ef18))
 - README updated ([63b2ffb](https://github.com/KingTimer12/tachyon-rs/commit/63b2ffb698a851984ced0f94def84c9fe3d8add0))
 - README updated ([b02a648](https://github.com/KingTimer12/tachyon-rs/commit/b02a648e2c6c860f6b2171b175ca397ad980cda9))
 
