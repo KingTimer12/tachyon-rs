@@ -46,33 +46,33 @@ class Tachyon {
     return this
   }
 
-  private transformToResponse(response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, string>) {
+  private transformToResponse(response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
     if (typeof response === "string") {
       return () => new TachyonResponse(200, response as string)
     } else if (typeof response === "function") {
       return response
     } else {
-      return () => new TachyonResponse(200, JSON.stringify(response as Record<string, string>))
+      return () => new TachyonResponse(200, JSON.stringify(response as Record<string, unknown>))
     }
 
   }
 
-  public get(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, string>) {
+  public get(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
     this.routes.set('GET@'+path, this.transformToResponse(response))
     return this
   }
 
-  public post(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, string>) {
+  public post(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
     this.routes.set('POST@'+path, this.transformToResponse(response))
     return this
   }
 
-  public put(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, string>) {
+  public put(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
     this.routes.set('PUT@'+path, this.transformToResponse(response))
     return this
   }
 
-  public delete(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, string>) {
+  public delete(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
     this.routes.set('DELETE@'+path, this.transformToResponse(response))
     return this
   }
