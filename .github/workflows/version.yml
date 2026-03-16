@@ -80,3 +80,8 @@ jobs:
           git commit -m "chore: release v${NEW}"
           git tag "v${NEW}"
           git push origin master --tags
+
+      - name: Trigger release workflow
+        run: gh workflow run release.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
