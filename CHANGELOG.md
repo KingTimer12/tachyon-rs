@@ -4,8 +4,22 @@
 
 ### Bug Fixes
 
+- Coroutine blocked ([e77693f](https://github.com/KingTimer12/tachyon-rs/commit/e77693f73a582e64111bddfce917d88f4c57c51a))
+
+### Miscellaneous
+
+- Cargo.lock updated ([a7860b3](https://github.com/KingTimer12/tachyon-rs/commit/a7860b37067a8b13a7ef7b9de63383bb8dce8db7))
+
+## [0.2.13] - 2026-03-16
+
+### Bug Fixes
+
 - Fmt errors ([8cf3f46](https://github.com/KingTimer12/tachyon-rs/commit/8cf3f46ca03c73ca6310116803e1d515a8afd536))
 - Test errors ([e8461b6](https://github.com/KingTimer12/tachyon-rs/commit/e8461b687fb45c93e6e777f0c502f465526ffbdc))
+
+### Miscellaneous
+
+- Release v0.2.13 ([ab6cdb3](https://github.com/KingTimer12/tachyon-rs/commit/ab6cdb3fe5189459cac0283c5e0c030066adb828))
 
 ## [0.2.12] - 2026-03-16
 
