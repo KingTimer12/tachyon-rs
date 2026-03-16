@@ -1,30 +1,32 @@
 # tachyon-rs
 
-HTTP server nativo em Rust com bindings para Node.js/Bun. Construido para ser rapido, seguro e extensivel.
+Native Rust HTTP server with Node.js/Bun bindings. Built for speed, security, and extensibility.
 
-## Inspiracao
+**[Leia em Portugues](README.pt-BR.md)**
 
-Tachyon combina ideias de projetos que resolvem problemas especificos muito bem:
+## Inspiration
 
-- **FaF** — Modelo de callback com buffers pre-alocados, zero-copy parsing e pool thread-local. A arquitetura core do tachyon segue esse pattern.
-- **picohttpparser** — Scanning de delimitadores HTTP com SIMD (SSE4.2/AVX2/NEON). 68-90% mais rapido que byte-a-byte.
-- **simdjson** — Bridge para parsing JSON de alta performance via C++.
-- **May** — Coroutines cooperativas leves. Uma por conexao, sem overhead de threads OS.
-- **Windows RIO** — Registered I/O para zero-copy networking no Windows 8+.
+Tachyon combines ideas from projects that solve specific problems really well:
 
-## Por que tachyon?
+- **FaF** — Callback model with pre-allocated buffers, zero-copy parsing, and thread-local pool. Tachyon's core architecture follows this pattern.
+- **picohttpparser** — HTTP delimiter scanning with SIMD (SSE4.2/AVX2/NEON). 68-90% faster than byte-by-byte.
+- **simdjson** — High-performance JSON parsing bridge via C++.
+- **May** — Lightweight cooperative coroutines. One per connection, no OS thread overhead.
+- **Windows RIO** — Registered I/O for zero-copy networking on Windows 8+.
+
+## Why tachyon?
 
 | | tachyon | Express | Fastify | Hono |
 |---|---|---|---|---|
 | Runtime | Rust (coroutines) | Node.js (event loop) | Node.js (event loop) | Node.js (event loop) |
 | HTTP parser | SIMD C++ (zero-copy) | http_parser (C) | llhttp (C) | llhttp (C) |
-| Buffer alloc | Pool pre-alocado (0 alloc/req) | GC-managed | GC-managed | GC-managed |
-| Threads | N coroutines por worker thread | Single-threaded | Single-threaded | Single-threaded |
-| Overhead JS | Minimo (handler only) | Tudo em JS | Tudo em JS | Tudo em JS |
+| Buffer alloc | Pre-allocated pool (0 alloc/req) | GC-managed | GC-managed | GC-managed |
+| Threads | N coroutines per worker thread | Single-threaded | Single-threaded | Single-threaded |
+| JS overhead | Minimal (handler only) | Everything in JS | Everything in JS | Everything in JS |
 
-O loop do servidor, parsing HTTP, buffer pool e I/O rodam em Rust. O JS so executa o handler do usuario.
+The server loop, HTTP parsing, buffer pool, and I/O run in Rust. JS only executes the user's handler.
 
-## Uso
+## Usage
 
 ```typescript
 import { Tachyon, TachyonResponse } from 'tachyon-rs'
@@ -40,12 +42,12 @@ new Tachyon()
 
 ## Plugins
 
-Plugins usam hooks de ciclo de vida: `pre` (antes do handler) e `pos` (depois do handler).
+Plugins use lifecycle hooks: `pre` (before handler) and `pos` (after handler).
 
 ```typescript
 import { Tachyon, TachyonResponse, type Plugin } from 'tachyon-rs'
 
-// JWT — bloqueia requests sem token
+// JWT — blocks requests without token
 const auth: Plugin = {
   pre: (req) => {
     const token = req.header('authorization')
@@ -85,47 +87,47 @@ new Tachyon({ security: 'strict' })
   .listen(3000)
 ```
 
-## Seguranca
+## Security
 
-Headers de seguranca sao configurados por preset no servidor:
+Security headers are configured by preset on the server:
 
 ```typescript
-new Tachyon({ security: 'basic' })   // padrao
-new Tachyon({ security: 'strict' })  // producao
-new Tachyon({ security: 'none' })    // velocidade maxima (use atras de proxy)
+new Tachyon({ security: 'basic' })   // default
+new Tachyon({ security: 'strict' })  // production
+new Tachyon({ security: 'none' })    // max speed (use behind a proxy)
 ```
 
 | Preset | Headers |
 |--------|---------|
-| `none` | Nenhum |
+| `none` | None |
 | `basic` | `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` |
-| `strict` | Todos de basic + `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `CORP` |
+| `strict` | All from basic + `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `CORP` |
 
-## Compressao
+## Compression
 
-Respostas grandes sao comprimidas com gzip automaticamente quando o cliente suporta (`Accept-Encoding: gzip`). A compressao acontece no Rust, transparente para o handler JS.
+Large responses are automatically gzip-compressed when the client supports it (`Accept-Encoding: gzip`). Compression happens in Rust, transparent to the JS handler.
 
 ```typescript
-new Tachyon()                              // default: comprime bodies >= 1KB
-new Tachyon({ compressionThreshold: 0 })   // comprime tudo
-new Tachyon({ compressionThreshold: 4096 })// comprime bodies >= 4KB
-new Tachyon({ compressionThreshold: -1 })  // desabilita compressao
+new Tachyon()                              // default: compress bodies >= 1KB
+new Tachyon({ compressionThreshold: 0 })   // compress everything
+new Tachyon({ compressionThreshold: 4096 })// compress bodies >= 4KB
+new Tachyon({ compressionThreshold: -1 })  // disable compression
 ```
 
-- Bodies abaixo do threshold sao enviados sem compressao (zero overhead)
-- Se o gzip nao reduzir o tamanho, envia sem compressao
-- Bodies maiores que o buffer pool (8KB) usam heap allocation automaticamente
+- Bodies below the threshold are sent uncompressed (zero overhead)
+- If gzip doesn't reduce size, sends uncompressed
+- Bodies larger than the buffer pool (8KB) use heap allocation automatically
 
-## Arquitetura
+## Architecture
 
 ```
-Request HTTP
+HTTP Request
     |
     v
 [Rust] TcpListener (May coroutines, N workers)
     |
     v
-[Rust] Buffer Pool (pre-alocado, thread-local, RAII)
+[Rust] Buffer Pool (pre-allocated, thread-local, RAII)
     |
     v
 [C++] SIMD HTTP Parser (AVX2/SSE4.2/NEON)
@@ -137,35 +139,35 @@ Request HTTP
 [JS] Plugin hooks (pre) -> Route handler -> Plugin hooks (pos)
     |
     v
-[Rust] Response buffer -> gzip (se threshold) -> write_all / RIO zero-copy
+[Rust] Response buffer -> gzip (if threshold) -> write_all / RIO zero-copy
 ```
 
-## Estrutura
+## Structure
 
 ```
 tachyon-rs/
-  tachyon-core/       Servidor, config, response builder, RIO
-  tachyon-http/       Parser HTTP zero-copy, constantes de response
-  tachyon-pool/       Buffer pool thread-local com RAII
-  tachyon-simd/       Bridge C++ (SIMD scan, socket tuning, RIO)
-  tachyon-napi/       Bindings NAPI para Node.js/Bun
-  tachyon-library/    API TypeScript (Tachyon, plugins, routing)
-  example/            Exemplo de uso
+  tachyon-core/       Server, config, response builder, RIO
+  tachyon-http/       Zero-copy HTTP parser, response constants
+  tachyon-pool/       Thread-local buffer pool with RAII
+  tachyon-simd/       C++ bridge (SIMD scan, socket tuning, RIO)
+  tachyon-napi/       NAPI bindings for Node.js/Bun
+  tachyon-library/    TypeScript API (Tachyon, plugins, routing)
+  example/            Usage example
 ```
 
 ## Build
 
 ```bash
-# Compilar o binding nativo
+# Build native binding
 npm run build
 
-# Rodar o exemplo
+# Run example
 npm run example
 
-# Testes
+# Tests
 cargo test
 ```
 
-## Licenca
+## License
 
 MIT

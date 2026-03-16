@@ -1,29 +1,29 @@
 # @tachyon-rs/server
 
-Native NAPI bindings from tachyon-rs for Node.js and Bun. This package is the bridge between the Rust HTTP server and the JavaScript runtime.
+Bindings NAPI nativos do tachyon-rs para Node.js e Bun. Este pacote e a ponte entre o servidor HTTP em Rust e o runtime JavaScript.
 
-**[Leia em Portugues](README.pt-BR.md)**
+**[Read in English](README.md)**
 
-> **Note:** This package is used internally by [`tachyon-rs`](https://www.npmjs.com/package/tachyon-rs). For most use cases, use `tachyon-rs` directly.
+> **Nota:** Este pacote e usado internamente pelo [`tachyon-rs`](https://www.npmjs.com/package/tachyon-rs). Para a maioria dos casos, use `tachyon-rs` diretamente.
 
-## Installation
+## Instalacao
 
 ```bash
 npm install @tachyon-rs/server
 ```
 
-The correct native binary for your platform is installed automatically via `optionalDependencies`.
+O binario nativo correto para sua plataforma e instalado automaticamente via `optionalDependencies`.
 
-### Supported platforms
+### Plataformas suportadas
 
-| Platform | Architecture | Package |
+| Plataforma | Arquitetura | Pacote |
 |---|---|---|
 | Linux | x64 | `@tachyon-rs/server-linux-x64-gnu` |
 | macOS | x64 | `@tachyon-rs/server-darwin-x64` |
 | macOS | ARM64 | `@tachyon-rs/server-darwin-arm64` |
 | Windows | x64 | `@tachyon-rs/server-win32-x64-msvc` |
 
-## Direct usage (low-level)
+## Uso direto (baixo nivel)
 
 ```typescript
 import { TachyonRawServer } from '@tachyon-rs/server'
@@ -44,16 +44,16 @@ server.start((request) => {
 })
 ```
 
-## Configuration
+## Configuracao
 
-| Option | Type | Default | Description |
+| Opcao | Tipo | Default | Descricao |
 |---|---|---|---|
-| `bindAddr` | `string` | `"0.0.0.0:3000"` | Address and port |
-| `workers` | `number` | CPU count | Worker threads |
-| `stackSizeKb` | `number` | `64` | Coroutine stack size (KB) |
-| `buffersPerWorker` | `number` | `128` | Buffers in pool per worker |
-| `bufferSize` | `number` | `8192` | Size of each buffer (bytes) |
-| `timeoutSecs` | `number` | `30` | Handler timeout (seconds) |
+| `bindAddr` | `string` | `"0.0.0.0:3000"` | Endereco e porta |
+| `workers` | `number` | CPU count | Threads de worker |
+| `stackSizeKb` | `number` | `64` | Stack size das coroutines (KB) |
+| `buffersPerWorker` | `number` | `128` | Buffers no pool por worker |
+| `bufferSize` | `number` | `8192` | Tamanho de cada buffer (bytes) |
+| `timeoutSecs` | `number` | `30` | Timeout do handler (segundos) |
 | `tcpNodelay` | `boolean` | `true` | TCP_NODELAY |
 | `reusePort` | `boolean` | `true` | SO_REUSEPORT (Linux/BSD) |
 | `tcpFastopen` | `boolean` | `true` | TCP Fast Open (Linux) |
@@ -61,9 +61,9 @@ server.start((request) => {
 | `recvBufSize` | `number` | `0` | SO_RCVBUF (0 = OS default) |
 | `sendBufSize` | `number` | `0` | SO_SNDBUF (0 = OS default) |
 | `security` | `string` | `"basic"` | `"none"` \| `"basic"` \| `"strict"` |
-| `compressionThreshold` | `number` | `1024` | 0 = compress all, -1 = disabled |
+| `compressionThreshold` | `number` | `1024` | 0 = comprime tudo, -1 = desabilitado |
 
-## Local build
+## Build local
 
 ```bash
 bun install
@@ -71,6 +71,6 @@ bun run build        # release
 bun run build:debug  # debug
 ```
 
-## License
+## Licenca
 
 MIT
