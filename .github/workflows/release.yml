@@ -127,10 +127,11 @@ jobs:
         working-directory: tachyon-napi
 
       - name: Prepublish platform packages
-        run: bun napi prepublish -t npm --no-gh-release
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          bun napi prepublish -t npm --no-gh-release
         working-directory: tachyon-napi
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish @tachyon-rs/server (native bindings)
