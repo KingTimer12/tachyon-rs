@@ -1,14 +1,14 @@
 # tachyon-rs
 
-Native Rust HTTP server with TypeScript API for Node.js and Bun. Fast, secure, and extensible.
+HTTP server nativo em Rust com API TypeScript para Node.js e Bun. Rapido, seguro e extensivel.
 
-**[Leia em Portugues](README.pt-BR.md)**
+**[Read in English](README.md)**
 
-## Installation
+## Instalacao
 
 ```bash
 npm install tachyon-rs
-# or
+# ou
 bun add tachyon-rs
 ```
 
@@ -28,7 +28,7 @@ new Tachyon()
 
 ## Plugins
 
-Lifecycle hooks: `pre` (before handler) and `pos` (after handler).
+Hooks de ciclo de vida: `pre` (antes do handler) e `pos` (depois do handler).
 
 ```typescript
 import { Tachyon, TachyonResponse, type Plugin } from 'tachyon-rs'
@@ -69,51 +69,51 @@ new Tachyon({ security: 'strict' })
   .listen(3000)
 ```
 
-## Configuration
+## Configuracao
 
 ```typescript
 new Tachyon({
   workers: 4,                    // threads (default: CPU count)
   security: 'basic',            // 'none' | 'basic' | 'strict'
-  compressionThreshold: 1024,   // bytes, 0 = all, -1 = disabled
+  compressionThreshold: 1024,   // bytes, 0 = tudo, -1 = desabilitado
 })
 ```
 
-### Security
+### Seguranca
 
 | Preset | Headers |
 |--------|---------|
-| `none` | None |
+| `none` | Nenhum |
 | `basic` | `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` |
-| `strict` | All from basic + `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `CORP` |
+| `strict` | Todos de basic + `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `CORP` |
 
-### Compression
+### Compressao
 
-Large responses are automatically gzip-compressed when the client supports it (`Accept-Encoding: gzip`).
+Respostas grandes sao comprimidas com gzip automaticamente quando o cliente suporta (`Accept-Encoding: gzip`).
 
 ```typescript
-new Tachyon()                              // default: compress bodies >= 1KB
-new Tachyon({ compressionThreshold: 0 })   // compress everything
-new Tachyon({ compressionThreshold: 4096 })// compress bodies >= 4KB
-new Tachyon({ compressionThreshold: -1 })  // disable compression
+new Tachyon()                              // default: comprime bodies >= 1KB
+new Tachyon({ compressionThreshold: 0 })   // comprime tudo
+new Tachyon({ compressionThreshold: 4096 })// comprime bodies >= 4KB
+new Tachyon({ compressionThreshold: -1 })  // desabilita compressao
 ```
 
-## Why tachyon?
+## Por que tachyon?
 
-- **Rust server** — server loop, HTTP parsing, and I/O run in Rust with coroutines
-- **SIMD parser** — HTTP scanning with SSE4.2/AVX2/NEON, 68-90% faster
-- **Zero allocation** — pre-allocated buffer pool, zero alloc per request
-- **Native gzip** — transparent compression in Rust
-- **Minimal JS overhead** — only the user's handler runs in JavaScript
+- **Servidor em Rust** — loop, parsing HTTP e I/O rodam em Rust com coroutines
+- **Parser SIMD** — scanning HTTP com SSE4.2/AVX2/NEON, 68-90% mais rapido
+- **Zero allocation** — buffer pool pre-alocado, zero alloc por request
+- **Gzip nativo** — compressao transparente no Rust
+- **Minimo overhead JS** — so o handler do usuario roda em JavaScript
 
-## Platforms
+## Plataformas
 
-| OS | Architecture |
+| OS | Arquitetura |
 |---|---|
 | Linux | x64 |
 | macOS | x64, ARM64 |
 | Windows | x64 |
 
-## License
+## Licenca
 
 MIT
