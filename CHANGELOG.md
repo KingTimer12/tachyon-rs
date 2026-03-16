@@ -2,8 +2,20 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Type error ([6b0f44b](https://github.com/KingTimer12/tachyon-rs/commit/6b0f44bf0830382e911bc11444ccd630135911a3))
+
 ### Miscellaneous
 
+- README updated ([63b2ffb](https://github.com/KingTimer12/tachyon-rs/commit/63b2ffb698a851984ced0f94def84c9fe3d8add0))
+- README updated ([b02a648](https://github.com/KingTimer12/tachyon-rs/commit/b02a648e2c6c860f6b2171b175ca397ad980cda9))
+
+## [0.2.10] - 2026-03-16
+
+### Miscellaneous
+
+- Release v0.2.10 ([f2ecd0a](https://github.com/KingTimer12/tachyon-rs/commit/f2ecd0a30cddf2135c93fd3398070ee8fb461ca7))
 - CI/CD ([fd9b5be](https://github.com/KingTimer12/tachyon-rs/commit/fd9b5be54246ed8d21fde98be7c62825758fd2c5))
 
 ## [0.2.9] - 2026-03-16
