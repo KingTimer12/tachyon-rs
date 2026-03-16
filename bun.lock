@@ -11,7 +11,7 @@
     "example": {
       "name": "example",
       "dependencies": {
-        "tachyon-rs": "workspace:*",
+        "tachyon-rs": "^0.2.8",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -22,20 +22,18 @@
     },
     "tachyon-library": {
       "name": "tachyon-rs",
-      "version": "0.2.3",
+      "version": "0.2.8",
       "dependencies": {
         "@tachyon-rs/server": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
-      },
-      "peerDependencies": {
         "typescript": "^5",
       },
     },
     "tachyon-napi": {
       "name": "@tachyon-rs/server",
-      "version": "0.2.3",
+      "version": "0.2.8",
       "devDependencies": {
         "@emnapi/core": "^1.5.0",
         "@emnapi/runtime": "^1.5.0",

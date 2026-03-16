@@ -126,16 +126,13 @@ jobs:
         run: bun run artifacts
         working-directory: tachyon-napi
 
-      - name: Publish platform packages
-        run: |
-          for dir in tachyon-napi/npm/*/; do
-            if [ -f "$dir/package.json" ]; then
-              echo "Publishing $(basename $dir)..."
-              npm publish "$dir" --access public
-            fi
-          done
+      - name: Prepublish and publish platform packages
+        run: bun napi prepublish -t npm --no-gh-release
+        working-directory: tachyon-napi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish @tachyon-rs/server (native bindings)
         run: npm publish --access public
