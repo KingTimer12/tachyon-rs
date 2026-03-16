@@ -189,20 +189,20 @@ impl TachyonRawServer {
         // Bridge sync coroutine ↔ async Node event loop:
         // 1. Create an unbounded channel (no backpressure on JS thread)
         // 2. call_with_return_value schedules JS on Node's event loop
-        // 3. Callback sends the result through the channel
-        // 4. Coroutine YIELDS (not blocks) via try_recv + may::yield_now
+        // 3. Callback sends the result and UNPARKS the coroutine
+        // 4. Coroutine PARKS (zero CPU) until JS responds
         //
-        // Critical: std::sync::mpsc::recv() blocks the OS thread, which
-        // deadlocks under high concurrency (all may workers blocked).
-        // Using try_recv + yield_now yields the coroutine so other
-        // coroutines can run on the same OS thread.
+        // may's park/unpark is permit-based: if unpark() is called before
+        // park(), the next park() returns immediately (no lost wakeup).
         let (tx, rx) = std::sync::mpsc::channel::<Option<TachyonRawResponse>>();
+        let co = may::coroutine::current();
 
         let status = handler_ref.call_with_return_value(
           ts_req,
           ThreadsafeFunctionCallMode::NonBlocking,
           move |result: napi::Result<TachyonRawResponse>, _env| {
             let _ = tx.send(result.ok());
+            co.unpark();
             Ok(())
           },
         );
@@ -211,16 +211,11 @@ impl TachyonRawServer {
           return res.json(500, b"{\"error\":\"handler call failed\"}");
         }
 
-        // Yield the coroutine until JS responds — does NOT block the OS thread
-        let js_result = loop {
-          match rx.try_recv() {
-            Ok(val) => break val,
-            Err(std::sync::mpsc::TryRecvError::Empty) => may::coroutine::yield_now(),
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => break None,
-          }
-        };
+        // Park the coroutine until JS responds — zero CPU while parked.
+        // Safe: if callback already fired, park() returns immediately (permit-based).
+        may::coroutine::park();
 
-        match js_result {
+        match rx.try_recv().ok().flatten() {
           Some(ts_res) => {
             let status_code = ts_res.status.unwrap_or(200) as u16;
             let body = ts_res.body.as_deref().unwrap_or("");
