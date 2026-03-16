@@ -2,11 +2,11 @@
   "name": "tachyon-rs",
   "version": "1.0.0",
   "description": "Template project for writing node package with napi-rs",
-  "workspaces": ["tachyon-library", "tachyon-napi"],
+  "workspaces": ["tachyon-library", "tachyon-napi", "example"],
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
-    "examples": "cd tachyon-napi && bun run example/server.ts",
+    "example": "cd example && bun dev",
     "build": "cd tachyon-napi && napi build --platform --release",
     "build:debug": "cd tachyon-napi && napi build --platform",
     "format": "run-p format:prettier format:rs format:toml",

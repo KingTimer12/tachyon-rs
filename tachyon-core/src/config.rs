@@ -97,6 +97,10 @@ pub struct ServerConfig {
     /// Socket-level tuning options (TCP_NODELAY, SO_REUSEPORT, etc.).
     /// Applied to the listener and per-connection sockets.
     pub socket: SocketConfig,
+
+    /// Security header preset for HTTP responses.
+    /// Default: Basic (essential headers with minimal overhead).
+    pub security: tachyon_http::response::SecurityPreset,
 }
 
 impl Default for ServerConfig {
@@ -110,6 +114,7 @@ impl Default for ServerConfig {
             handler_timeout: Duration::from_secs(30),
             catch_panics: true,
             socket: SocketConfig::default(),
+            security: tachyon_http::response::SecurityPreset::default(),
         }
     }
 }
@@ -182,6 +187,11 @@ impl ServerConfig {
 
     pub fn send_buffer(mut self, bytes: i32) -> Self {
         self.socket.send_buf_size = bytes;
+        self
+    }
+
+    pub fn security(mut self, preset: tachyon_http::response::SecurityPreset) -> Self {
+        self.security = preset;
         self
     }
 }

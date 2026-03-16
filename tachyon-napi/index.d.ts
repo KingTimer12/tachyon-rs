@@ -29,30 +29,6 @@ export declare class TachyonRawServer {
 }
 
 /**
- * Parsed HTTP request exposed to TypeScript callbacks.
- *
- * ```typescript
- * server.handle(({ method, path, body }) => {
- *     console.log(req.method, req.path);
- *     return { status: 200, body: '{"ok": true}' };
- * });
- * ```
- */
-export interface TachyonRawRequest {
-  method: string
-  path: string
-  body?: string
-}
-
-/** Response from TypeScript handler. */
-export interface TachyonRawResponse {
-  status?: number
-  body?: string
-  /** "json" | "text" | "html" (default: "json") */
-  contentType?: string
-}
-
-/**
  * Server configuration exposed to TypeScript.
  *
  * ```typescript
@@ -88,4 +64,39 @@ export interface TachyonRawConfig {
   recvBufSize?: number
   /** SO_SNDBUF in bytes (default: 0 = OS default) */
   sendBufSize?: number
+  /** Security header preset: "none" | "basic" | "strict" (default: "basic") */
+  security?: string
+}
+
+/** A single HTTP header key-value pair. */
+export interface TachyonRawHeader {
+  name: string
+  value: string
+}
+
+/**
+ * Parsed HTTP request exposed to TypeScript callbacks.
+ *
+ * ```typescript
+ * server.handle(({ method, path, body }) => {
+ *     console.log(req.method, req.path);
+ *     return { status: 200, body: '{"ok": true}' };
+ * });
+ * ```
+ */
+export interface TachyonRawRequest {
+  method: string
+  path: string
+  body?: string
+  headers: Array<TachyonRawHeader>
+}
+
+/** Response from TypeScript handler. */
+export interface TachyonRawResponse {
+  status?: number
+  body?: string
+  /** "json" | "text" | "html" (default: "json") */
+  contentType?: string
+  /** Custom HTTP headers as key-value pairs (e.g., CORS, Cache-Control). */
+  headers?: Array<TachyonRawHeader>
 }

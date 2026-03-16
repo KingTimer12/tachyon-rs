@@ -6,7 +6,7 @@ use napi::{Result, Status, bindgen_prelude::Function};
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use napi_derive::napi;
 
-use crate::handle::{TachyonRawRequest, TachyonRawResponse};
+use crate::handle::{TachyonRawHeader, TachyonRawRequest, TachyonRawResponse};
 
 mod handle;
 
@@ -61,6 +61,8 @@ pub struct TachyonRawConfig {
     pub recv_buf_size: Option<i32>,
     /// SO_SNDBUF in bytes (default: 0 = OS default)
     pub send_buf_size: Option<i32>,
+    /// Security header preset: "none" | "basic" | "strict" (default: "basic")
+    pub security: Option<String>,
 }
  
 impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
@@ -100,6 +102,14 @@ impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
         }
         if let Some(v) = ts.send_buf_size {
             config = config.send_buffer(v);
+        }
+        if let Some(ref s) = ts.security {
+            let preset = match s.as_str() {
+                "none" => tachyon_http::response::SecurityPreset::None,
+                "strict" => tachyon_http::response::SecurityPreset::Strict,
+                _ => tachyon_http::response::SecurityPreset::Basic,
+            };
+            config = config.security(preset);
         }
         config
     }
@@ -159,6 +169,14 @@ impl TachyonRawServer {
                     } else {
                         String::from_utf8(req.body.to_vec()).ok()
                     },
+                    headers: req.headers[..req.header_count]
+                        .iter()
+                        .filter_map(|h| h.as_ref())
+                        .map(|h| TachyonRawHeader {
+                            name: String::from_utf8_lossy(h.name).into_owned(),
+                            value: String::from_utf8_lossy(h.value).into_owned(),
+                        })
+                        .collect(),
                 };
 
                 // Bridge sync coroutine ↔ async Node event loop:
@@ -188,6 +206,12 @@ impl TachyonRawServer {
                     Ok(Some(ts_res)) => {
                         let status_code = ts_res.status.unwrap_or(200) as u16;
                         let body = ts_res.body.as_deref().unwrap_or("");
+                        // Apply custom headers from the JS handler
+                        if let Some(headers) = &ts_res.headers {
+                            for h in headers {
+                                res.header(h.name.as_bytes(), h.value.as_bytes());
+                            }
+                        }
                         match ts_res.content_type.as_deref().unwrap_or("json") {
                             "text" | "plain" => res.text(status_code, body.as_bytes()),
                             _ => res.json(status_code, body.as_bytes()),

@@ -70,6 +70,7 @@ pub fn deregister_buffer(buf_id: i64) {
 /// Wraps a socket handle with RIO request/completion queues for zero-copy I/O.
 /// Each connection in the server loop gets one of these.
 pub struct RioConn {
+    #[allow(dead_code)] // used only on Windows via cfg-gated methods and Drop
     ctx: i64,
 }
 
