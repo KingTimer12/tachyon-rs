@@ -4,6 +4,13 @@
 
 ### Miscellaneous
 
+- CI/CD ([fd9b5be](https://github.com/KingTimer12/tachyon-rs/commit/fd9b5be54246ed8d21fde98be7c62825758fd2c5))
+
+## [0.2.9] - 2026-03-16
+
+### Miscellaneous
+
+- Release v0.2.9 ([e04e2ae](https://github.com/KingTimer12/tachyon-rs/commit/e04e2ae2a140c35f64eaeda15d7444b87f5c60ca))
 - CI/CD ([e5272c6](https://github.com/KingTimer12/tachyon-rs/commit/e5272c697e1b36749a6f5a88ba6ab1087c13d0f1))
 
 ## [0.2.8] - 2026-03-16
