@@ -104,7 +104,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -126,19 +125,18 @@ jobs:
         run: bun run artifacts
         working-directory: tachyon-napi
 
-      - name: Prepublish and publish platform packages
-        run: bun napi prepublish -t npm --no-gh-release
+      - name: List packages
+        run: ls -R npm
         working-directory: tachyon-napi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish @tachyon-rs/server (native bindings)
-        run: npm publish --access public
+      - name: Publish @tachyon-rs/server
+        run: |
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
+          npm publish --access public
         working-directory: tachyon-napi
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Resolve workspace dependency for tachyon-rs
         run: |
