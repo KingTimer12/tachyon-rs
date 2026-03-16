@@ -10,7 +10,7 @@ pub struct Header<'a> {
     pub name: &'a [u8],
     pub value: &'a [u8],
 }
- 
+
 /// A parsed HTTP request. All fields borrow from the original buffer.
 ///
 /// This is the core design from FaF: the parser never allocates.
@@ -36,14 +36,14 @@ impl<'a> Request<'a> {
             .find(|h| eq_ignore_ascii_case(h.name, name))
             .map(|h| h.value)
     }
- 
+
     /// Get Content-Length if present and valid.
     pub fn content_length(&self) -> Option<usize> {
         self.header(b"content-length")
             .and_then(|v| std::str::from_utf8(v).ok())
             .and_then(|s| s.trim().parse().ok())
     }
- 
+
     /// Path as UTF-8 string (most paths are ASCII, so this is cheap).
     pub fn path_str(&self) -> &str {
         // Safety: HTTP paths are required to be valid ASCII, and

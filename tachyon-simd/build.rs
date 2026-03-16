@@ -14,8 +14,12 @@ fn main() {
     let has_simdjson = simdjson_h.exists() && simdjson_cpp.exists();
 
     if !has_simdjson {
-        println!("cargo:warning=simdjson not found in cpp/vendor/. JSON parsing will use fallback.");
-        println!("cargo:warning=To enable: place simdjson.h + simdjson.cpp in crates/tachyon-simd/cpp/vendor/");
+        println!(
+            "cargo:warning=simdjson not found in cpp/vendor/. JSON parsing will use fallback."
+        );
+        println!(
+            "cargo:warning=To enable: place simdjson.h + simdjson.cpp in crates/tachyon-simd/cpp/vendor/"
+        );
     }
 
     // --- Build the cxx bridge ---
@@ -48,14 +52,19 @@ fn main() {
         }
         "aarch64" => {}
         _ => {
-            println!("cargo:warning=No SIMD for arch '{}', scalar fallback", target_arch);
+            println!(
+                "cargo:warning=No SIMD for arch '{}', scalar fallback",
+                target_arch
+            );
         }
     }
 
     build.opt_level(3);
 
     match target_os.as_str() {
-        "linux" => { build.define("_GNU_SOURCE", None); }
+        "linux" => {
+            build.define("_GNU_SOURCE", None);
+        }
         "windows" => {
             println!("cargo:rustc-link-lib=ws2_32");
             println!("cargo:rustc-link-lib=mswsock");

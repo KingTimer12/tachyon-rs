@@ -147,9 +147,5 @@ pub fn default_tuning() -> SocketTuning {
 pub fn tune_socket(fd: i64) -> Result<(), i32> {
     let tuning = default_tuning();
     let err = ffi::apply_socket_tuning(fd, &tuning);
-    if err == 0 {
-        Ok(())
-    } else {
-        Err(err)
-    }
+    if err == 0 { Ok(()) } else { Err(err) }
 }

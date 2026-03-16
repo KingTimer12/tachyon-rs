@@ -81,11 +81,7 @@ impl RioConn {
     #[cfg(all(feature = "simd", windows))]
     pub fn new(socket_handle: i64) -> Option<Self> {
         let ctx = tachyon_simd::rio_create_context(socket_handle);
-        if ctx > 0 {
-            Some(Self { ctx })
-        } else {
-            None
-        }
+        if ctx > 0 { Some(Self { ctx }) } else { None }
     }
 
     #[cfg(not(all(feature = "simd", windows)))]
@@ -125,7 +121,10 @@ impl RioConn {
         #[cfg(not(all(feature = "simd", windows)))]
         {
             let _ = (buf_id, offset, length);
-            Err(io::Error::new(io::ErrorKind::Unsupported, "RIO not available"))
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "RIO not available",
+            ))
         }
     }
 
@@ -155,7 +154,10 @@ impl RioConn {
         #[cfg(not(all(feature = "simd", windows)))]
         {
             let _ = (buf_id, offset, length);
-            Err(io::Error::new(io::ErrorKind::Unsupported, "RIO not available"))
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "RIO not available",
+            ))
         }
     }
 }

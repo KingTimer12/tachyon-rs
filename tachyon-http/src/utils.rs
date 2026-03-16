@@ -7,7 +7,7 @@ pub fn eq_ignore_ascii_case(a: &[u8], b: &[u8]) -> bool {
     }
     a.iter()
         .zip(b.iter())
-        .all(|(&x, &y)| x.to_ascii_lowercase() == y.to_ascii_lowercase())
+        .all(|(x, y)| x.eq_ignore_ascii_case(y))
 }
 
 #[inline(always)]
@@ -18,7 +18,7 @@ pub fn find_header_end(buf: &[u8]) -> Option<usize> {
     {
         tachyon_simd::find_headers_end(buf)
     }
- 
+
     // Scalar fallback when compiled without SIMD feature.
     #[cfg(not(feature = "simd"))]
     {
@@ -26,14 +26,15 @@ pub fn find_header_end(buf: &[u8]) -> Option<usize> {
             return None;
         }
         for i in 0..buf.len() - 3 {
-            if buf[i] == b'\r' && buf[i + 1] == b'\n' && buf[i + 2] == b'\r' && buf[i + 3] == b'\n' {
+            if buf[i] == b'\r' && buf[i + 1] == b'\n' && buf[i + 2] == b'\r' && buf[i + 3] == b'\n'
+            {
                 return Some(i);
             }
         }
         None
     }
 }
- 
+
 #[inline(always)]
 pub fn memchr_byte(needle: u8, haystack: &[u8]) -> Option<usize> {
     // SIMD path: 16-32 bytes per cycle instead of 1.
@@ -41,13 +42,13 @@ pub fn memchr_byte(needle: u8, haystack: &[u8]) -> Option<usize> {
     {
         tachyon_simd::memchr(needle, haystack)
     }
- 
+
     #[cfg(not(feature = "simd"))]
     {
         haystack.iter().position(|&b| b == needle)
     }
 }
- 
+
 #[inline(always)]
 pub fn parse_method(buf: &[u8]) -> Option<(Method, &[u8])> {
     // Check common methods by first byte for fast dispatch
@@ -72,7 +73,7 @@ pub fn parse_method(buf: &[u8]) -> Option<(Method, &[u8])> {
     };
     Some((method, &buf[len..]))
 }
- 
+
 #[inline(always)]
 pub fn parse_path(buf: &[u8]) -> Option<(&[u8], &[u8])> {
     let sp = memchr_byte(b' ', buf)?;
@@ -82,7 +83,7 @@ pub fn parse_path(buf: &[u8]) -> Option<(&[u8], &[u8])> {
     }
     Some((path, &buf[sp + 1..]))
 }
- 
+
 #[inline(always)]
 pub fn parse_version(buf: &[u8]) -> Option<(u8, &[u8])> {
     // Expect "HTTP/1.X\r\n"
@@ -99,33 +100,31 @@ pub fn parse_version(buf: &[u8]) -> Option<(u8, &[u8])> {
     }
     Some((minor, &buf[10..]))
 }
- 
+
 #[inline(always)]
 pub fn parse_header(buf: &[u8]) -> Option<(Header<'_>, &[u8])> {
     let colon = memchr_byte(b':', buf)?;
     let crlf = find_crlf(&buf[colon..])?;
     let crlf_abs = colon + crlf;
- 
+
     let name = &buf[..colon];
     // Skip ": " (colon + optional whitespace)
     let value_start = colon + 1;
     let value = trim_ascii_start(&buf[value_start..crlf_abs]);
- 
+
     Some((Header { name, value }, &buf[crlf_abs + 2..]))
 }
- 
+
 #[inline(always)]
 pub fn find_crlf(buf: &[u8]) -> Option<usize> {
-    for i in 0..buf.len().saturating_sub(1) {
-        if buf[i] == b'\r' && buf[i + 1] == b'\n' {
-            return Some(i);
-        }
-    }
-    None
+    (0..buf.len().saturating_sub(1)).find(|&i| buf[i] == b'\r' && buf[i + 1] == b'\n')
 }
- 
+
 #[inline(always)]
 pub fn trim_ascii_start(buf: &[u8]) -> &[u8] {
-    let start = buf.iter().position(|&b| b != b' ' && b != b'\t').unwrap_or(buf.len());
+    let start = buf
+        .iter()
+        .position(|&b| b != b' ' && b != b'\t')
+        .unwrap_or(buf.len());
     &buf[start..]
 }

@@ -19,5 +19,8 @@
     "preversion": "napi build --platform && git add .",
     "version": "napi version",
     "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
   }
 }

@@ -43,7 +43,14 @@ fn incomplete_request() {
 fn write_json_response() {
     let mut buf = [0u8; 4096];
     let body = b"{\"ok\":true}";
-    let n = response::write_response(&mut buf, response::STATUS_200, response::CONTENT_JSON, body, response::SECURITY_BASIC, b"");
+    let n = response::write_response(
+        &mut buf,
+        response::STATUS_200,
+        response::CONTENT_JSON,
+        body,
+        response::SECURITY_BASIC,
+        b"",
+    );
     let resp = std::str::from_utf8(&buf[..n]).unwrap();
     assert!(resp.starts_with("HTTP/1.1 200 OK"));
     assert!(resp.contains("application/json"));
@@ -56,7 +63,14 @@ fn write_json_response() {
 fn write_response_security_none() {
     let mut buf = [0u8; 4096];
     let body = b"{}";
-    let n = response::write_response(&mut buf, response::STATUS_200, response::CONTENT_JSON, body, response::SECURITY_NONE, b"");
+    let n = response::write_response(
+        &mut buf,
+        response::STATUS_200,
+        response::CONTENT_JSON,
+        body,
+        response::SECURITY_NONE,
+        b"",
+    );
     let resp = std::str::from_utf8(&buf[..n]).unwrap();
     assert!(!resp.contains("X-Content-Type-Options"));
     assert!(!resp.contains("X-Frame-Options"));
@@ -66,7 +80,14 @@ fn write_response_security_none() {
 fn write_response_security_strict() {
     let mut buf = [0u8; 4096];
     let body = b"{}";
-    let n = response::write_response(&mut buf, response::STATUS_200, response::CONTENT_JSON, body, response::SECURITY_STRICT, b"");
+    let n = response::write_response(
+        &mut buf,
+        response::STATUS_200,
+        response::CONTENT_JSON,
+        body,
+        response::SECURITY_STRICT,
+        b"",
+    );
     let resp = std::str::from_utf8(&buf[..n]).unwrap();
     assert!(resp.contains("X-Content-Type-Options: nosniff"));
     assert!(resp.contains("X-Frame-Options: DENY"));
@@ -81,7 +102,14 @@ fn write_response_custom_headers() {
     let mut buf = [0u8; 4096];
     let body = b"{}";
     let custom = b"Access-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\n";
-    let n = response::write_response(&mut buf, response::STATUS_200, response::CONTENT_JSON, body, response::SECURITY_NONE, custom);
+    let n = response::write_response(
+        &mut buf,
+        response::STATUS_200,
+        response::CONTENT_JSON,
+        body,
+        response::SECURITY_NONE,
+        custom,
+    );
     let resp = std::str::from_utf8(&buf[..n]).unwrap();
     assert!(resp.contains("Access-Control-Allow-Origin: *"));
     assert!(resp.contains("Cache-Control: no-cache"));

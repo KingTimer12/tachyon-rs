@@ -1,5 +1,5 @@
-/// Pre-formatted HTTP response headers. FaF keeps these as compile-time
-/// constants to avoid any formatting at runtime.
+// Pre-formatted HTTP response headers. FaF keeps these as compile-time
+// constants to avoid any formatting at runtime.
 
 pub const STATUS_200: &[u8] = b"HTTP/1.1 200 OK\r\n";
 pub const STATUS_201: &[u8] = b"HTTP/1.1 201 Created\r\n";
@@ -38,24 +38,19 @@ Cross-Origin-Opener-Policy: same-origin\r\n\
 Cross-Origin-Resource-Policy: same-origin\r\n";
 
 /// Security preset levels for HTTP response headers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SecurityPreset {
     /// No security headers. Maximum speed, user handles security externally
     /// (e.g., behind a reverse proxy that adds its own headers).
     None,
     /// Essential security headers with minimal overhead (default).
     /// Adds: X-Content-Type-Options, X-Frame-Options.
+    #[default]
     Basic,
     /// Full security hardening for production-facing services.
     /// Adds: all Basic headers + X-XSS-Protection, Referrer-Policy,
     /// Permissions-Policy, COOP, CORP.
     Strict,
-}
-
-impl Default for SecurityPreset {
-    fn default() -> Self {
-        Self::Basic
-    }
 }
 
 impl SecurityPreset {

@@ -1,4 +1,7 @@
-use std::{cell::RefCell, ops::{Deref, DerefMut}};
+use std::{
+    cell::RefCell,
+    ops::{Deref, DerefMut},
+};
 
 /// A pool of reusable byte buffers, local to a single thread.
 ///
@@ -62,7 +65,10 @@ impl BufferPool {
             vec![0u8; self.buf_size]
         });
 
-        BufGuard { buf: Some(buf), len: 0 }
+        BufGuard {
+            buf: Some(buf),
+            len: 0,
+        }
     }
 
     /// Return a buffer to the pool. Called automatically by `BufGuard::drop`.

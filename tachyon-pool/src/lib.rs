@@ -1,2 +1,2 @@
-pub mod pool;
 mod buffer;
+pub mod pool;

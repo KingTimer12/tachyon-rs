@@ -154,7 +154,11 @@ impl Server {
                     }
                 }
             }
-            eprintln!("[tachyon] All {} warmup requests done: {:?}", warmup_count, t.elapsed());
+            eprintln!(
+                "[tachyon] All {} warmup requests done: {:?}",
+                warmup_count,
+                t.elapsed()
+            );
             warmup_ready2.store(true, Ordering::Release);
         });
 
@@ -238,7 +242,12 @@ impl Server {
                             continue;
                         }
                         tachyon_http::parser::ParseResult::Error(_) => {
-                            let mut res = Response::new(write_buf.as_write_buf(), sec_headers, false, comp_threshold);
+                            let mut res = Response::new(
+                                write_buf.as_write_buf(),
+                                sec_headers,
+                                false,
+                                comp_threshold,
+                            );
                             res.text(400, b"Bad Request");
                             let _ = rio_or_write(&rio_conn, write_buf_id, &mut stream, res.data());
                             break;
@@ -251,7 +260,12 @@ impl Server {
                         .map(|v| v.windows(4).any(|w| w == b"gzip"))
                         .unwrap_or(false);
 
-                    let mut res = Response::new(write_buf.as_write_buf(), sec_headers, accepts_gzip, comp_threshold);
+                    let mut res = Response::new(
+                        write_buf.as_write_buf(),
+                        sec_headers,
+                        accepts_gzip,
+                        comp_threshold,
+                    );
                     if config.catch_panics {
                         let result = safety::catch_handler_mut(|| {
                             let n = handler(&request, &mut res);
@@ -259,7 +273,12 @@ impl Server {
                         });
                         if let Err(e) = result.into_result() {
                             eprintln!("[tachyon] Handler failed: {}", e);
-                            res = Response::new(write_buf.as_write_buf(), sec_headers, accepts_gzip, comp_threshold);
+                            res = Response::new(
+                                write_buf.as_write_buf(),
+                                sec_headers,
+                                accepts_gzip,
+                                comp_threshold,
+                            );
                             res.json(500, b"{\"error\":\"internal\"}");
                         }
                     } else {

@@ -106,24 +106,21 @@ impl<'a> Response<'a> {
         content_type: &[u8],
         body: &[u8],
     ) -> usize {
-        if self.should_compress(body) {
-            if let Some(compressed) = Self::compress_gzip(body) {
-                // Body was compressed — add encoding headers
-                self.custom_headers.extend_from_slice(tachyon_http::response::ENCODING_GZIP);
-                self.custom_headers.extend_from_slice(tachyon_http::response::VARY_ACCEPT_ENCODING);
-                return self.write_final(status_line, content_type, &compressed);
-            }
+        if self.should_compress(body)
+            && let Some(compressed) = Self::compress_gzip(body)
+        {
+            // Body was compressed — add encoding headers
+            self.custom_headers
+                .extend_from_slice(tachyon_http::response::ENCODING_GZIP);
+            self.custom_headers
+                .extend_from_slice(tachyon_http::response::VARY_ACCEPT_ENCODING);
+            return self.write_final(status_line, content_type, &compressed);
         }
         self.write_final(status_line, content_type, body)
     }
 
     /// Write the final response, using the pool buffer if it fits, or heap-allocating otherwise.
-    fn write_final(
-        &mut self,
-        status_line: &[u8],
-        content_type: &[u8],
-        body: &[u8],
-    ) -> usize {
+    fn write_final(&mut self, status_line: &[u8], content_type: &[u8], body: &[u8]) -> usize {
         let total = tachyon_http::response::response_size(
             status_line,
             content_type,
@@ -189,5 +186,10 @@ impl<'a> Response<'a> {
         } else {
             self.pos
         }
+    }
+
+    /// Returns true if no bytes have been written.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }

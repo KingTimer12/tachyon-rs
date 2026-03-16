@@ -7,7 +7,7 @@
 //! - `catch_handler_mut`: wraps a handler in `catch_unwind` so panics don't propagate
 //! - `SafeResult`: unified error type for the FFI boundary
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Result type that crosses the FFI boundary safely.
 #[derive(Debug)]
