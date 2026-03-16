@@ -1,6 +1,6 @@
 import { Tachyon } from 'tachyon-rs'
 
-new Tachyon({ compressionThreshold: -1 })
+new Tachyon()
   .get('/', 'Hello Tachyon!')
   .get('/mingau', {
     response: 'mingau'

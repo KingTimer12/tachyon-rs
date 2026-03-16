@@ -114,7 +114,7 @@ impl Default for ServerConfig {
             bind_addr: "0.0.0.0:3000".to_string(),
             workers: num_cpus(),
             coroutine_stack_size: 64 * 1024,
-            buffers_per_worker: 512,
+            buffers_per_worker: 128,
             buffer_size: 8 * 1024,
             handler_timeout: Duration::from_secs(30),
             catch_panics: true,

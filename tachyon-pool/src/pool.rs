@@ -5,8 +5,9 @@ use crate::buffer::{BufGuard, BufferPool};
 /// (`RES_BUFF_SIZE`) for the same purpose.
 pub const DEFAULT_BUF_SIZE: usize = 8 * 1024;
  
-/// Default number of pre-allocated buffers per thread.
-pub const DEFAULT_POOL_CAPACITY: usize = 512;
+/// Default max number of pooled buffers per thread.
+/// The pool starts empty (lazy) and grows on demand up to this cap.
+pub const DEFAULT_POOL_CAPACITY: usize = 128;
 
 // Thread-local pool access
 thread_local! {

@@ -5,8 +5,14 @@ use std::{cell::RefCell, ops::{Deref, DerefMut}};
 /// Inspired by FaF's pre-allocated response buffers, but generalized:
 /// instead of one global buffer, each thread gets a pool that coroutines
 /// can borrow from without allocation.
+///
+/// **Lazy allocation**: the pool starts empty and grows on demand.
+/// Buffers returned via `release()` are kept up to `max_capacity`.
+/// This means idle servers use near-zero memory, while active servers
+/// build up a hot pool of reusable buffers over time.
 pub struct BufferPool {
     buf_size: usize,
+    max_capacity: usize,
     buffers: RefCell<Vec<Vec<u8>>>,
     #[cfg(debug_assertions)]
     stats: RefCell<PoolStats>,
@@ -28,19 +34,20 @@ pub struct BufGuard {
 }
 
 impl BufferPool {
-    /// Create a new pool pre-filled with `capacity` buffers of `buf_size` bytes.
-    pub fn new(capacity: usize, buf_size: usize) -> Self {
-        let buffers = (0..capacity).map(|_| vec![0u8; buf_size]).collect();
+    /// Create a new **lazy** pool. No buffers are allocated until first `acquire()`.
+    /// Buffers returned via `release()` are kept up to `max_capacity`.
+    pub fn new(max_capacity: usize, buf_size: usize) -> Self {
         Self {
             buf_size,
-            buffers: RefCell::new(buffers),
+            max_capacity,
+            buffers: RefCell::new(Vec::with_capacity(max_capacity)),
             #[cfg(debug_assertions)]
             stats: RefCell::new(PoolStats::default()),
         }
     }
 
     /// Acquire a buffer from the pool. If the pool is empty, allocates a new one
-    /// (this is the "miss" path — ideally rare in a well-tuned deployment).
+    /// (this is the "miss" path — ideally rare once the pool is warmed up).
     pub fn acquire(&self) -> BufGuard {
         #[cfg(debug_assertions)]
         {
@@ -59,17 +66,20 @@ impl BufferPool {
     }
 
     /// Return a buffer to the pool. Called automatically by `BufGuard::drop`.
+    /// If the pool is at max capacity, the buffer is dropped (deallocated).
     pub fn release(&self, mut buf: Vec<u8>) {
         #[cfg(debug_assertions)]
         {
             self.stats.borrow_mut().releases += 1;
         }
 
-        // Reset length but keep capacity — the allocation is reused.
-        // This mirrors FaF's approach: the buffer memory stays allocated,
-        // only the "used" marker resets.
-        buf.clear();
-        self.buffers.borrow_mut().push(buf);
+        let mut buffers = self.buffers.borrow_mut();
+        if buffers.len() < self.max_capacity {
+            // Reset length but keep capacity — the allocation is reused.
+            buf.clear();
+            buffers.push(buf);
+        }
+        // else: pool is full, drop the buffer (Vec deallocates)
     }
 
     pub fn get_buffers(&self) -> Vec<Vec<u8>> {
