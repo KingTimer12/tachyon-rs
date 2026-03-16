@@ -62,9 +62,11 @@ jobs:
       - name: Update package.json versions
         run: |
           NEW="${{ steps.version.outputs.new }}"
-          cd tachyon-napi && npm version "$NEW" --no-git-tag-version && cd ..
-          cd tachyon-library && npm version "$NEW" --no-git-tag-version && cd ..
-          npm version "$NEW" --no-git-tag-version
+          for pkg in package.json tachyon-napi/package.json tachyon-library/package.json; do
+            if [ -f "$pkg" ]; then
+              jq --arg v "$NEW" '.version = $v' "$pkg" > tmp.json && mv tmp.json "$pkg"
+            fi
+          done
 
       - name: Configure git
         run: |
