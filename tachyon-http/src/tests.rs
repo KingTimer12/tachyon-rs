@@ -50,6 +50,7 @@ fn write_json_response() {
         body,
         response::SECURITY_BASIC,
         b"",
+        b"",
     );
     let resp = std::str::from_utf8(&buf[..n]).unwrap();
     assert!(resp.starts_with("HTTP/1.1 200 OK"));
@@ -70,6 +71,7 @@ fn write_response_security_none() {
         body,
         response::SECURITY_NONE,
         b"",
+        b"",
     );
     let resp = std::str::from_utf8(&buf[..n]).unwrap();
     assert!(!resp.contains("X-Content-Type-Options"));
@@ -86,6 +88,7 @@ fn write_response_security_strict() {
         response::CONTENT_JSON,
         body,
         response::SECURITY_STRICT,
+        b"",
         b"",
     );
     let resp = std::str::from_utf8(&buf[..n]).unwrap();
@@ -109,9 +112,29 @@ fn write_response_custom_headers() {
         body,
         response::SECURITY_NONE,
         custom,
+        b"",
     );
     let resp = std::str::from_utf8(&buf[..n]).unwrap();
     assert!(resp.contains("Access-Control-Allow-Origin: *"));
     assert!(resp.contains("Cache-Control: no-cache"));
+    assert!(resp.ends_with("{}"));
+}
+
+#[test]
+fn write_response_with_date_header() {
+    let mut buf = [0u8; 4096];
+    let body = b"{}";
+    let date = b"Date: Mon, 16 Mar 2026 12:00:00 GMT\r\n";
+    let n = response::write_response(
+        &mut buf,
+        response::STATUS_200,
+        response::CONTENT_JSON,
+        body,
+        response::SECURITY_NONE,
+        b"",
+        date,
+    );
+    let resp = std::str::from_utf8(&buf[..n]).unwrap();
+    assert!(resp.contains("Date: Mon, 16 Mar 2026 12:00:00 GMT"));
     assert!(resp.ends_with("{}"));
 }
