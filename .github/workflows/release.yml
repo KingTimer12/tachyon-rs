@@ -56,7 +56,7 @@ jobs:
         working-directory: tachyon-napi
 
       - name: Build native module (release)
-        run: npx @napi-rs/cli build --platform --release --target ${{ matrix.target }}
+        run: bun napi build --platform --release --target ${{ matrix.target }}
         working-directory: tachyon-napi
 
       - name: Upload artifact
@@ -114,7 +114,7 @@ jobs:
         working-directory: tachyon-napi
 
       - name: Create npm platform directories
-        run: npx @napi-rs/cli create-npm-dirs
+        run: bun napi create-npm-dirs
         working-directory: tachyon-napi
 
       - name: Download all artifacts
