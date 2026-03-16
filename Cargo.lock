@@ -789,6 +789,7 @@ dependencies = [
 name = "tachyon-napi"
 version = "0.2.12"
 dependencies = [
+ "may",
  "napi",
  "napi-build",
  "napi-derive",

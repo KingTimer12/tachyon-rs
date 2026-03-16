@@ -14,6 +14,7 @@ napi-derive = { workspace = true }
 tachyon-core = { workspace = true }
 tachyon-http = { workspace = true }
 tachyon-pool = { workspace = true }
+may = { workspace = true }
 
 [build-dependencies]
 napi-build = "2"

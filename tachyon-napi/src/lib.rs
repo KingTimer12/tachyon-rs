@@ -187,18 +187,20 @@ impl TachyonRawServer {
         };
 
         // Bridge sync coroutine ↔ async Node event loop:
-        // 1. Create a rendezvous channel (1 slot, minimal overhead)
+        // 1. Create an unbounded channel (no backpressure on JS thread)
         // 2. call_with_return_value schedules JS on Node's event loop
         // 3. Callback sends the result through the channel
-        // 4. Coroutine blocks on recv() until JS handler completes
+        // 4. Coroutine YIELDS (not blocks) via try_recv + may::yield_now
         //
-        // ThreadsafeFunctionCallMode::Blocking ensures the call
-        // is enqueued even if Node's loop is saturated.
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Option<TachyonRawResponse>>(1);
+        // Critical: std::sync::mpsc::recv() blocks the OS thread, which
+        // deadlocks under high concurrency (all may workers blocked).
+        // Using try_recv + yield_now yields the coroutine so other
+        // coroutines can run on the same OS thread.
+        let (tx, rx) = std::sync::mpsc::channel::<Option<TachyonRawResponse>>();
 
         let status = handler_ref.call_with_return_value(
           ts_req,
-          ThreadsafeFunctionCallMode::Blocking,
+          ThreadsafeFunctionCallMode::NonBlocking,
           move |result: napi::Result<TachyonRawResponse>, _env| {
             let _ = tx.send(result.ok());
             Ok(())
@@ -209,8 +211,17 @@ impl TachyonRawServer {
           return res.json(500, b"{\"error\":\"handler call failed\"}");
         }
 
-        match rx.recv() {
-          Ok(Some(ts_res)) => {
+        // Yield the coroutine until JS responds — does NOT block the OS thread
+        let js_result = loop {
+          match rx.try_recv() {
+            Ok(val) => break val,
+            Err(std::sync::mpsc::TryRecvError::Empty) => may::coroutine::yield_now(),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => break None,
+          }
+        };
+
+        match js_result {
+          Some(ts_res) => {
             let status_code = ts_res.status.unwrap_or(200) as u16;
             let body = ts_res.body.as_deref().unwrap_or("");
             // Apply custom headers from the JS handler
@@ -225,7 +236,7 @@ impl TachyonRawServer {
             }
           }
           // JS handler threw or channel disconnected
-          Ok(None) | Err(_) => res.json(500, b"{\"error\":\"handler error\"}"),
+          None => res.json(500, b"{\"error\":\"handler error\"}"),
         }
       },
     );
