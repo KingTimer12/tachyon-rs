@@ -22,7 +22,7 @@
     },
     "tachyon-library": {
       "name": "tachyon-rs",
-      "version": "0.2.8",
+      "version": "0.2.10",
       "dependencies": {
         "@tachyon-rs/server": "workspace:*",
       },
@@ -33,7 +33,7 @@
     },
     "tachyon-napi": {
       "name": "@tachyon-rs/server",
-      "version": "0.2.8",
+      "version": "0.2.10",
       "devDependencies": {
         "@emnapi/core": "^1.5.0",
         "@emnapi/runtime": "^1.5.0",
