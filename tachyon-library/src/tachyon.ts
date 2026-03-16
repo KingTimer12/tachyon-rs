@@ -48,13 +48,14 @@ class Tachyon {
 
   private transformToResponse(response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
     if (typeof response === "string") {
-      return () => new TachyonResponse(200, response as string)
+      return () => new TachyonResponse(200, response).text()
     } else if (typeof response === "function") {
       return response
     } else {
-      return () => new TachyonResponse(200, JSON.stringify(response as Record<string, unknown>))
+      // Pre-serialize once at registration time, not per request
+      const serialized = JSON.stringify(response)
+      return () => new TachyonResponse(200, serialized)
     }
-
   }
 
   public get(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {

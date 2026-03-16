@@ -121,12 +121,14 @@ impl<'a> Response<'a> {
 
     /// Write the final response, using the pool buffer if it fits, or heap-allocating otherwise.
     fn write_final(&mut self, status_line: &[u8], content_type: &[u8], body: &[u8]) -> usize {
+        let date_header = crate::date::cached_date_header();
         let total = tachyon_http::response::response_size(
             status_line,
             content_type,
             body,
             self.security_headers,
             &self.custom_headers,
+            date_header,
         );
 
         if total <= self.buf.len() {
@@ -138,6 +140,7 @@ impl<'a> Response<'a> {
                 body,
                 self.security_headers,
                 &self.custom_headers,
+                date_header,
             );
             self.pos
         } else {
@@ -148,6 +151,7 @@ impl<'a> Response<'a> {
                 body,
                 self.security_headers,
                 &self.custom_headers,
+                date_header,
             );
             let len = vec.len();
             self.overflow = Some(vec);

@@ -114,6 +114,9 @@ impl Server {
             eprintln!("[tachyon] RIO (Registered I/O) enabled for zero-copy networking");
         }
 
+        // Start the Date header cache (updated once per second, read by all workers)
+        crate::date::start_date_cache();
+
         let config = Arc::new(self.config);
 
         // Phase 1: Warm buffer pools on all worker threads

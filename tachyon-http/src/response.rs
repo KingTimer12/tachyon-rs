@@ -72,12 +72,14 @@ pub fn response_size(
     body: &[u8],
     security_headers: &[u8],
     custom_headers: &[u8],
+    date_header: &[u8],
 ) -> usize {
     let cl_header = format!("Content-Length: {}\r\n", body.len());
     status.len()
         + content_type.len()
         + cl_header.len()
         + CONNECTION_KEEP.len()
+        + date_header.len()
         + security_headers.len()
         + custom_headers.len()
         + CRLF.len()
@@ -97,6 +99,7 @@ pub fn write_response(
     body: &[u8],
     security_headers: &[u8],
     custom_headers: &[u8],
+    date_header: &[u8],
 ) -> usize {
     let mut pos = 0;
 
@@ -117,6 +120,11 @@ pub fn write_response(
     write_bytes!(cl_bytes);
 
     write_bytes!(CONNECTION_KEEP);
+
+    // Date header (cached, updated once per second)
+    if !date_header.is_empty() {
+        write_bytes!(date_header);
+    }
 
     // Security headers (pre-concatenated, single memcpy)
     if !security_headers.is_empty() {
@@ -143,14 +151,18 @@ pub fn write_response_vec(
     body: &[u8],
     security_headers: &[u8],
     custom_headers: &[u8],
+    date_header: &[u8],
 ) -> Vec<u8> {
-    let size = response_size(status, content_type, body, security_headers, custom_headers);
+    let size = response_size(status, content_type, body, security_headers, custom_headers, date_header);
     let mut buf = Vec::with_capacity(size);
     buf.extend_from_slice(status);
     buf.extend_from_slice(content_type);
     let cl_header = format!("Content-Length: {}\r\n", body.len());
     buf.extend_from_slice(cl_header.as_bytes());
     buf.extend_from_slice(CONNECTION_KEEP);
+    if !date_header.is_empty() {
+        buf.extend_from_slice(date_header);
+    }
     if !security_headers.is_empty() {
         buf.extend_from_slice(security_headers);
     }
