@@ -4,10 +4,17 @@
 
 ### Bug Fixes
 
+- No response 'cause couratine using 100% CPU) ([b4ad706](https://github.com/KingTimer12/tachyon-rs/commit/b4ad70673056502c2b7a4cf37c998d977a646774))
+
+## [0.2.14] - 2026-03-16
+
+### Bug Fixes
+
 - Coroutine blocked ([e77693f](https://github.com/KingTimer12/tachyon-rs/commit/e77693f73a582e64111bddfce917d88f4c57c51a))
 
 ### Miscellaneous
 
+- Release v0.2.14 ([d24e2d7](https://github.com/KingTimer12/tachyon-rs/commit/d24e2d7a3d4cca75cc75e233c22c93fde20f573d))
 - Cargo.lock updated ([a7860b3](https://github.com/KingTimer12/tachyon-rs/commit/a7860b37067a8b13a7ef7b9de63383bb8dce8db7))
 
 ## [0.2.13] - 2026-03-16
