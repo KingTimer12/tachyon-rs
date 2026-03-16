@@ -2,8 +2,16 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fmt errors ([8cf3f46](https://github.com/KingTimer12/tachyon-rs/commit/8cf3f46ca03c73ca6310116803e1d515a8afd536))
+- Test errors ([e8461b6](https://github.com/KingTimer12/tachyon-rs/commit/e8461b687fb45c93e6e777f0c502f465526ffbdc))
+
+## [0.2.12] - 2026-03-16
+
 ### Miscellaneous
 
+- Release v0.2.12 ([7376110](https://github.com/KingTimer12/tachyon-rs/commit/7376110699e0f48455fbf46a8e6cf28e4ff346bf))
 - Chore: added date to headers
 fix: content-type wrong for text response ([48b1e1a](https://github.com/KingTimer12/tachyon-rs/commit/48b1e1a2a5c9f99b7dcc54ac715b54d8c58933e2))
 
