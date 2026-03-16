@@ -101,6 +101,11 @@ pub struct ServerConfig {
     /// Security header preset for HTTP responses.
     /// Default: Basic (essential headers with minimal overhead).
     pub security: tachyon_http::response::SecurityPreset,
+
+    /// Minimum body size in bytes to trigger gzip compression.
+    /// Only compresses when the client sends Accept-Encoding: gzip.
+    /// 0 = compress all responses, usize::MAX = disabled. Default: 1024 (1KB).
+    pub compression_threshold: usize,
 }
 
 impl Default for ServerConfig {
@@ -115,6 +120,7 @@ impl Default for ServerConfig {
             catch_panics: true,
             socket: SocketConfig::default(),
             security: tachyon_http::response::SecurityPreset::default(),
+            compression_threshold: 1024,
         }
     }
 }
@@ -192,6 +198,11 @@ impl ServerConfig {
 
     pub fn security(mut self, preset: tachyon_http::response::SecurityPreset) -> Self {
         self.security = preset;
+        self
+    }
+
+    pub fn compression(mut self, threshold_bytes: usize) -> Self {
+        self.compression_threshold = threshold_bytes;
         self
     }
 }

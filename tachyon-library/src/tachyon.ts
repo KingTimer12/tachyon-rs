@@ -7,6 +7,8 @@ export type SecurityPreset = 'none' | 'basic' | 'strict'
 export interface TachyonConfig {
   workers?: number
   security?: SecurityPreset
+  /** Minimum body size in bytes to trigger gzip compression. 0 = compress all, -1 = disabled. Default: 1024 */
+  compressionThreshold?: number
 }
 
 /**
@@ -80,6 +82,7 @@ class Tachyon {
       bindAddr: '0.0.0.0:' + port,
       workers: this.config.workers ?? 4,
       security: this.config.security ?? 'basic',
+      compressionThreshold: this.config.compressionThreshold,
     })
 
     server.start((raw) => {

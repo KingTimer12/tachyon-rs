@@ -66,6 +66,11 @@ export interface TachyonRawConfig {
   sendBufSize?: number
   /** Security header preset: "none" | "basic" | "strict" (default: "basic") */
   security?: string
+  /**
+   * Minimum body size in bytes to trigger gzip compression.
+   * 0 = compress all, -1 = disabled. Default: 1024 (1KB).
+   */
+  compressionThreshold?: number
 }
 
 /** A single HTTP header key-value pair. */

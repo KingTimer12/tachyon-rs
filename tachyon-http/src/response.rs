@@ -13,6 +13,8 @@ pub const CONTENT_HTML: &[u8] = b"Content-Type: text/html; charset=utf-8\r\n";
 pub const CONTENT_TEXT: &[u8] = b"Content-Type: text/plain; charset=utf-8\r\n";
 pub const CONNECTION_CLOSE: &[u8] = b"Connection: close\r\n";
 pub const CONNECTION_KEEP: &[u8] = b"Connection: keep-alive\r\n";
+pub const ENCODING_GZIP: &[u8] = b"Content-Encoding: gzip\r\n";
+pub const VARY_ACCEPT_ENCODING: &[u8] = b"Vary: Accept-Encoding\r\n";
 pub const CRLF: &[u8] = b"\r\n";
 
 /// Security header presets — pre-concatenated for a single copy_from_slice per response.
@@ -67,9 +69,31 @@ impl SecurityPreset {
     }
 }
 
+/// Calculate total response size without writing.
+#[inline]
+pub fn response_size(
+    status: &[u8],
+    content_type: &[u8],
+    body: &[u8],
+    security_headers: &[u8],
+    custom_headers: &[u8],
+) -> usize {
+    let cl_header = format!("Content-Length: {}\r\n", body.len());
+    status.len()
+        + content_type.len()
+        + cl_header.len()
+        + CONNECTION_KEEP.len()
+        + security_headers.len()
+        + custom_headers.len()
+        + CRLF.len()
+        + body.len()
+}
+
 /// Write a complete response into a buffer, returning bytes written.
 /// This is the FaF callback model: you get a buffer, you fill it, you
 /// return how many bytes you wrote.
+///
+/// **Caller must ensure `buf` is large enough** — use `response_size()` to check.
 #[inline]
 pub fn write_response(
     buf: &mut [u8],
@@ -113,4 +137,32 @@ pub fn write_response(
     write_bytes!(body);
 
     pos
+}
+
+/// Write a complete response into a Vec (heap-allocated), for bodies that
+/// exceed the pool buffer size.
+#[inline]
+pub fn write_response_vec(
+    status: &[u8],
+    content_type: &[u8],
+    body: &[u8],
+    security_headers: &[u8],
+    custom_headers: &[u8],
+) -> Vec<u8> {
+    let size = response_size(status, content_type, body, security_headers, custom_headers);
+    let mut buf = Vec::with_capacity(size);
+    buf.extend_from_slice(status);
+    buf.extend_from_slice(content_type);
+    let cl_header = format!("Content-Length: {}\r\n", body.len());
+    buf.extend_from_slice(cl_header.as_bytes());
+    buf.extend_from_slice(CONNECTION_KEEP);
+    if !security_headers.is_empty() {
+        buf.extend_from_slice(security_headers);
+    }
+    if !custom_headers.is_empty() {
+        buf.extend_from_slice(custom_headers);
+    }
+    buf.extend_from_slice(CRLF);
+    buf.extend_from_slice(body);
+    buf
 }

@@ -63,6 +63,9 @@ pub struct TachyonRawConfig {
     pub send_buf_size: Option<i32>,
     /// Security header preset: "none" | "basic" | "strict" (default: "basic")
     pub security: Option<String>,
+    /// Minimum body size in bytes to trigger gzip compression.
+    /// 0 = compress all, -1 = disabled. Default: 1024 (1KB).
+    pub compression_threshold: Option<i32>,
 }
  
 impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
@@ -110,6 +113,13 @@ impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
                 _ => tachyon_http::response::SecurityPreset::Basic,
             };
             config = config.security(preset);
+        }
+        if let Some(v) = ts.compression_threshold {
+            if v < 0 {
+                config = config.compression(usize::MAX); // disabled
+            } else {
+                config = config.compression(v as usize);
+            }
         }
         config
     }

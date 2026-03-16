@@ -101,6 +101,21 @@ new Tachyon({ security: 'none' })    // velocidade maxima (use atras de proxy)
 | `basic` | `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` |
 | `strict` | Todos de basic + `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `CORP` |
 
+## Compressao
+
+Respostas grandes sao comprimidas com gzip automaticamente quando o cliente suporta (`Accept-Encoding: gzip`). A compressao acontece no Rust, transparente para o handler JS.
+
+```typescript
+new Tachyon()                              // default: comprime bodies >= 1KB
+new Tachyon({ compressionThreshold: 0 })   // comprime tudo
+new Tachyon({ compressionThreshold: 4096 })// comprime bodies >= 4KB
+new Tachyon({ compressionThreshold: -1 })  // desabilita compressao
+```
+
+- Bodies abaixo do threshold sao enviados sem compressao (zero overhead)
+- Se o gzip nao reduzir o tamanho, envia sem compressao
+- Bodies maiores que o buffer pool (8KB) usam heap allocation automaticamente
+
 ## Arquitetura
 
 ```
@@ -122,7 +137,7 @@ Request HTTP
 [JS] Plugin hooks (pre) -> Route handler -> Plugin hooks (pos)
     |
     v
-[Rust] Response buffer -> write_all / RIO zero-copy
+[Rust] Response buffer -> gzip (se threshold) -> write_all / RIO zero-copy
 ```
 
 ## Estrutura

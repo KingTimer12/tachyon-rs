@@ -13,3 +13,4 @@ tachyon-simd = { path = "../tachyon-simd", optional = true }
 tachyon-http = { path = "../tachyon-http", features = ["simd"] }
 tachyon-pool = { path = "../tachyon-pool" }
 may = { workspace = true }
+flate2 = "1"

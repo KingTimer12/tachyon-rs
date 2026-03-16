@@ -186,6 +186,7 @@ impl Server {
                 let mut read_buf = tachyon_pool::pool::acquire();
                 let mut write_buf = tachyon_pool::pool::acquire();
                 let sec_headers = config.security.as_bytes();
+                let comp_threshold = config.compression_threshold;
 
                 // Set up RIO zero-copy path if available (Windows only).
                 // We get the raw socket handle, create a RIO context, and register
@@ -237,34 +238,44 @@ impl Server {
                             continue;
                         }
                         tachyon_http::parser::ParseResult::Error(_) => {
-                            let mut res = Response::new(write_buf.as_write_buf(), sec_headers);
-                            let n = res.text(400, b"Bad Request");
-                            let _ = rio_or_write(&rio_conn, write_buf_id, &mut stream, &write_buf.as_write_buf()[..n]);
+                            let mut res = Response::new(write_buf.as_write_buf(), sec_headers, false, comp_threshold);
+                            res.text(400, b"Bad Request");
+                            let _ = rio_or_write(&rio_conn, write_buf_id, &mut stream, res.data());
                             break;
                         }
                     };
 
-                    let response_len = if config.catch_panics {
+                    // Check if client accepts gzip encoding
+                    let accepts_gzip = request
+                        .header(b"accept-encoding")
+                        .map(|v| v.windows(4).any(|w| w == b"gzip"))
+                        .unwrap_or(false);
+
+                    let mut res = Response::new(write_buf.as_write_buf(), sec_headers, accepts_gzip, comp_threshold);
+                    if config.catch_panics {
                         let result = safety::catch_handler_mut(|| {
-                            let mut res = Response::new(write_buf.as_write_buf(), sec_headers);
                             let n = handler(&request, &mut res);
                             Ok(n)
                         });
-                        match result.into_result() {
-                            Ok(n) => n,
-                            Err(e) => {
-                                eprintln!("[tachyon] Handler failed: {}", e);
-                                let mut res = Response::new(write_buf.as_write_buf(), sec_headers);
-                                res.json(500, b"{\"error\":\"internal\"}")
-                            }
+                        if let Err(e) = result.into_result() {
+                            eprintln!("[tachyon] Handler failed: {}", e);
+                            res = Response::new(write_buf.as_write_buf(), sec_headers, accepts_gzip, comp_threshold);
+                            res.json(500, b"{\"error\":\"internal\"}");
                         }
                     } else {
-                        let mut res = Response::new(write_buf.as_write_buf(), sec_headers);
-                        handler(&request, &mut res)
+                        handler(&request, &mut res);
                     };
 
-                    // WRITE: use RIO zero-copy send when available, else standard write
-                    if rio_or_write(&rio_conn, write_buf_id, &mut stream, &write_buf.as_write_buf()[..response_len]).is_err()
+                    // WRITE: use RIO zero-copy send when available, else standard write.
+                    // For overflow responses (body > pool buffer), we must bypass RIO
+                    // since the data isn't in the registered buffer.
+                    let send_data = res.data();
+                    if res.is_overflow() {
+                        // Overflow: data is on the heap, not in the registered write buffer
+                        if stream.write_all(send_data).is_err() {
+                            break;
+                        }
+                    } else if rio_or_write(&rio_conn, write_buf_id, &mut stream, send_data).is_err()
                     {
                         break;
                     }
