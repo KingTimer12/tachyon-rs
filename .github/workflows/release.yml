@@ -128,7 +128,8 @@ jobs:
 
       - name: Prepublish platform packages
         run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" >> ~/.npmrc
+          echo "access=public" >> ~/.npmrc
           bun napi prepublish -t npm --no-gh-release
         working-directory: tachyon-napi
         env:
