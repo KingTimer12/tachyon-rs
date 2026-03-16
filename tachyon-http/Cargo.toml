@@ -9,4 +9,4 @@ repository.workspace = true
 simd = ["dep:tachyon-simd"]
 
 [dependencies]
-tachyon-simd = { path = "../tachyon-simd", optional = true }
+tachyon-simd = { workspace = true, optional = true }

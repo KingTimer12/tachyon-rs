@@ -9,13 +9,15 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/KingTimer12/tachyon-rs"
 
 [workspace.dependencies]
-may = "0.3"
 napi = "3"
 napi-derive = "3"
+may = "0.3"
+flate2 = "1"
 
-tachyon-core = { path = "../tachyon-core", features = ["simd"] }
-tachyon-http = { path = "../tachyon-http", features = ["simd"] }
-tachyon-pool = { path = "../tachyon-pool" }
+tachyon-simd = { path = "tachyon-simd" }
+tachyon-core = { path = "tachyon-core", features = ["simd"] }
+tachyon-http = { path = "tachyon-http", features = ["simd"] }
+tachyon-pool = { path = "tachyon-pool" }
 
 [profile.release]
 opt-level = 3

@@ -9,8 +9,8 @@ repository.workspace = true
 simd = ["dep:tachyon-simd"]
 
 [dependencies]
-tachyon-simd = { path = "../tachyon-simd", optional = true }
-tachyon-http = { path = "../tachyon-http", features = ["simd"] }
-tachyon-pool = { path = "../tachyon-pool" }
+tachyon-simd = { workspace = true, optional = true }
+tachyon-http = { workspace = true }
+tachyon-pool = { workspace = true }
 may = { workspace = true }
-flate2 = "1"
+flate2 = { workspace = true }
