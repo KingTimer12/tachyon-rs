@@ -1,6 +1,6 @@
 {
   "name": "@tachyon-rs/server",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "Template project for writing node package with napi-rs",
   "main": "index.js",
   "repository": {

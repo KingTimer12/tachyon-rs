@@ -4,10 +4,25 @@
 
 ### Bug Fixes
 
+- ContentType for text ([c9bd48c](https://github.com/KingTimer12/tachyon-rs/commit/c9bd48c19bf56b8de48684d8f18bbd194e90cfbd))
+
+### Miscellaneous
+
+- New version updated ([3573599](https://github.com/KingTimer12/tachyon-rs/commit/35735996e345fb8b5583cf4f2b61511cf4aa1fa4))
+
+### Build
+
+- Update in cargo.lock ([288b80f](https://github.com/KingTimer12/tachyon-rs/commit/288b80fd2485449352f2798fc61ee3fae2a41d7c))
+
+## [0.2.16] - 2026-03-17
+
+### Bug Fixes
+
 - Clippy problem ([d7c3002](https://github.com/KingTimer12/tachyon-rs/commit/d7c3002871fa471fe2b7ab1cf72db1ad4de6df7c))
 
 ### Miscellaneous
 
+- Release v0.2.16 ([e091682](https://github.com/KingTimer12/tachyon-rs/commit/e091682d3e97067dbcf1a495d193c7b01b0111d0))
 - New methods for improve speed ([e458020](https://github.com/KingTimer12/tachyon-rs/commit/e45802054462fa842f58301a1ec000471a20945d))
 
 ## [0.2.15] - 2026-03-16

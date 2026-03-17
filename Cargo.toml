@@ -3,7 +3,7 @@ resolver = "2"
 members = ["tachyon-core","tachyon-http", "tachyon-pool", "tachyon-napi", "tachyon-simd"]
 
 [workspace.package]
-version = "0.2.16"
+version = "0.2.17"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/KingTimer12/tachyon-rs"
