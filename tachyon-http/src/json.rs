@@ -44,6 +44,11 @@ impl<'a> JsonWriter<'a> {
     }
 
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.pos == 0
+    }
+
+    #[inline]
     fn push_byte(&mut self, b: u8) {
         if self.pos < self.buf.len() {
             self.buf[self.pos] = b;
@@ -177,11 +182,11 @@ impl<'a> JsonWriter<'a> {
     pub fn object(&mut self, f: impl FnOnce(&mut Self)) -> &mut Self {
         self.comma_if_needed();
         self.push_byte(b'{');
-        let saved = self.needs_comma;
+        let _saved = self.needs_comma;
         self.needs_comma = false;
         f(self);
         self.push_byte(b'}');
-        self.needs_comma = saved || true;
+        self.needs_comma = true;
         self
     }
 
@@ -190,11 +195,11 @@ impl<'a> JsonWriter<'a> {
     pub fn array(&mut self, f: impl FnOnce(&mut Self)) -> &mut Self {
         self.comma_if_needed();
         self.push_byte(b'[');
-        let saved = self.needs_comma;
+        let _saved = self.needs_comma;
         self.needs_comma = false;
         f(self);
         self.push_byte(b']');
-        self.needs_comma = saved || true;
+        self.needs_comma = true;
         self
     }
 
