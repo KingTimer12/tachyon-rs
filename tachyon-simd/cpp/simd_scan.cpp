@@ -36,16 +36,16 @@
 #define TACHYON_HAS_NEON 1
 #endif
 
-// Cross-platform count-trailing-zeros
+// Cross-platform count-trailing-zeros (may be unused on NEON-only platforms)
 #if defined(_MSC_VER)
 #include <intrin.h>
-static inline int tachyon_ctz(uint32_t mask) {
+[[maybe_unused]] static inline int tachyon_ctz(uint32_t mask) {
     unsigned long idx;
     _BitScanForward(&idx, mask);
     return static_cast<int>(idx);
 }
 #else
-static inline int tachyon_ctz(uint32_t mask) {
+[[maybe_unused]] static inline int tachyon_ctz(uint32_t mask) {
     return __builtin_ctz(mask);
 }
 #endif
@@ -547,6 +547,55 @@ int32_t apply_socket_tuning(int64_t fd, const SocketTuning& t) {
 #endif
 
     return last_err;
+}
+
+// ============================================================================
+// CPU Affinity (Linux sched_setaffinity)
+// ============================================================================
+
+#if defined(__linux__)
+#include <sched.h>
+#include <unistd.h>
+#endif
+
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#include <unistd.h>
+#endif
+
+int32_t set_cpu_affinity(int32_t cpu_id) {
+#if defined(__linux__)
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu_id, &cpuset);
+    if (sched_setaffinity(0, sizeof(cpuset), &cpuset) != 0) {
+        return -errno;
+    }
+    return 0;
+#else
+    (void)cpu_id;
+    return 0; // No-op on non-Linux
+#endif
+}
+
+int32_t get_cpu_count() {
+#if defined(__linux__)
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? static_cast<int32_t>(n) : 1;
+#elif defined(__APPLE__)
+    int n = 0;
+    size_t len = sizeof(n);
+    if (sysctlbyname("hw.ncpu", &n, &len, nullptr, 0) == 0 && n > 0) {
+        return static_cast<int32_t>(n);
+    }
+    return 1;
+#elif defined(_WIN32)
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return static_cast<int32_t>(si.dwNumberOfProcessors);
+#else
+    return 1;
+#endif
 }
 
 } // namespace simd

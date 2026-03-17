@@ -9,4 +9,6 @@ repository.workspace = true
 simd = ["dep:tachyon-simd"]
 
 [dependencies]
+itoa = "1"
+ryu = "1"
 tachyon-simd = { workspace = true, optional = true }

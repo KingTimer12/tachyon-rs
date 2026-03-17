@@ -61,11 +61,38 @@ impl Server {
     }
 
     /// Pre-initialize all lazy systems so the first real request is fast.
+    /// Also pins each worker thread to its own CPU core (Linux only via sched_setaffinity).
     fn warmup_pools(workers: usize) {
+        use std::sync::atomic::AtomicI32;
+        let cpu_counter = Arc::new(AtomicI32::new(0));
         let (tx, rx) = std::sync::mpsc::channel();
         for _ in 0..(workers * 2) {
             let tx = tx.clone();
+            let cpu_counter = cpu_counter.clone();
             go!(move || {
+                // Pin this worker thread to a CPU core (once per thread).
+                // Thread-local flag ensures we only call sched_setaffinity once.
+                thread_local! {
+                    static PINNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+                }
+                PINNED.with(|pinned| {
+                    if !pinned.get() {
+                        pinned.set(true);
+                        #[cfg(feature = "simd")]
+                        {
+                            let cpu_id = cpu_counter.fetch_add(1, Ordering::Relaxed);
+                            let err = tachyon_simd::set_cpu_affinity(cpu_id);
+                            if err != 0 {
+                                eprintln!(
+                                    "[tachyon] CPU affinity warning for core {}: errno {}",
+                                    cpu_id, -err
+                                );
+                            }
+                        }
+                        #[cfg(not(feature = "simd"))]
+                        let _ = &cpu_counter;
+                    }
+                });
                 let _buf = tachyon_pool::pool::acquire();
                 let _ = tx.send(());
             });
@@ -222,92 +249,132 @@ impl Server {
                     None
                 };
 
-                loop {
-                    // READ: use RIO zero-copy recv when available, else standard read
-                    let n = if let (Some(rio), Some(rb_id)) = (&rio_conn, read_buf_id) {
-                        match rio.recv(rb_id, 0, read_buf.capacity() as u32) {
-                            Ok(0) => break,
-                            Ok(n) => n,
-                            Err(_) => break,
-                        }
-                    } else {
-                        match stream.read(read_buf.as_write_buf()) {
-                            Ok(0) => break,
-                            Ok(n) => n,
-                            Err(_) => break,
-                        }
-                    };
-                    read_buf.set_len(n);
+                // Pipelining state: track unconsumed bytes in read_buf.
+                // After processing a request, leftover bytes may contain the
+                // next pipelined request — process it without a syscall.
+                let mut buf_offset: usize = 0;
+                let mut buf_len: usize = 0;
 
-                    let request = match tachyon_http::parser::parse(read_buf.filled()) {
-                        tachyon_http::parser::ParseResult::Complete(req) => req,
-                        tachyon_http::parser::ParseResult::Incomplete => {
-                            continue;
-                        }
-                        tachyon_http::parser::ParseResult::Error(_) => {
-                            let mut res = Response::new(
-                                write_buf.as_write_buf(),
-                                sec_headers,
-                                false,
-                                comp_threshold,
-                            );
-                            res.text(400, b"Bad Request");
-                            let _ = rio_or_write(&rio_conn, write_buf_id, &mut stream, res.data());
-                            break;
-                        }
-                    };
-
-                    // Check if client accepts gzip encoding
-                    let accepts_gzip = request
-                        .header(b"accept-encoding")
-                        .map(|v| v.windows(4).any(|w| w == b"gzip"))
-                        .unwrap_or(false);
-
-                    let mut res = Response::new(
-                        write_buf.as_write_buf(),
-                        sec_headers,
-                        accepts_gzip,
-                        comp_threshold,
-                    );
-                    if config.catch_panics {
-                        let result = safety::catch_handler_mut(|| {
-                            let n = handler(&request, &mut res);
-                            Ok(n)
-                        });
-                        if let Err(e) = result.into_result() {
-                            eprintln!("[tachyon] Handler failed: {}", e);
-                            res = Response::new(
-                                write_buf.as_write_buf(),
-                                sec_headers,
-                                accepts_gzip,
-                                comp_threshold,
-                            );
-                            res.json(500, b"{\"error\":\"internal\"}");
-                        }
-                    } else {
-                        handler(&request, &mut res);
-                    };
-
-                    // WRITE: use RIO zero-copy send when available, else standard write.
-                    // For overflow responses (body > pool buffer), we must bypass RIO
-                    // since the data isn't in the registered buffer.
-                    let send_data = res.data();
-                    if res.is_overflow() {
-                        // Overflow: data is on the heap, not in the registered write buffer
-                        if stream.write_all(send_data).is_err() {
-                            break;
-                        }
-                    } else if rio_or_write(&rio_conn, write_buf_id, &mut stream, send_data).is_err()
-                    {
-                        break;
+                'conn: loop {
+                    // If no unconsumed data, read from the socket
+                    if buf_offset >= buf_len {
+                        buf_offset = 0;
+                        let n = if let (Some(rio), Some(rb_id)) = (&rio_conn, read_buf_id) {
+                            match rio.recv(rb_id, 0, read_buf.capacity() as u32) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(_) => break,
+                            }
+                        } else {
+                            match stream.read(read_buf.as_write_buf()) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(_) => break,
+                            }
+                        };
+                        buf_len = n;
+                        read_buf.set_len(n);
                     }
-                    if request.version_minor == 0
-                        || request
-                            .header(b"connection")
-                            .map(|v| v == b"close")
-                            .unwrap_or(false)
-                    {
-                        break;
+
+                    // Process all complete requests in the buffer (pipelining)
+                    loop {
+                        let data = &read_buf.as_write_buf()[buf_offset..buf_len];
+                        if data.is_empty() {
+                            break; // Need more data → outer loop will read
+                        }
+
+                        let request = match tachyon_http::parser::parse(data) {
+                            tachyon_http::parser::ParseResult::Complete(req) => req,
+                            tachyon_http::parser::ParseResult::Incomplete => {
+                                // Partial request: shift unconsumed bytes to front, read more
+                                if buf_offset > 0 {
+                                    let remaining = buf_len - buf_offset;
+                                    let wbuf = read_buf.as_write_buf();
+                                    wbuf.copy_within(buf_offset..buf_len, 0);
+                                    buf_offset = 0;
+                                    read_buf.set_len(remaining);
+                                    // Read more data appending after remaining bytes
+                                    let n = match stream
+                                        .read(&mut read_buf.as_write_buf()[remaining..])
+                                    {
+                                        Ok(0) => break 'conn,
+                                        Ok(n) => n,
+                                        Err(_) => break 'conn,
+                                    };
+                                    buf_len = remaining + n;
+                                    read_buf.set_len(buf_len);
+                                }
+                                break; // Re-enter inner loop with more data
+                            }
+                            tachyon_http::parser::ParseResult::Error(_) => {
+                                let mut res = Response::new(
+                                    write_buf.as_write_buf(),
+                                    sec_headers,
+                                    false,
+                                    comp_threshold,
+                                );
+                                res.text(400, b"Bad Request");
+                                let _ =
+                                    rio_or_write(&rio_conn, write_buf_id, &mut stream, res.data());
+                                break 'conn;
+                            }
+                        };
+
+                        // Advance past this request's bytes
+                        buf_offset += request.consumed();
+
+                        // Check if client accepts gzip encoding
+                        let accepts_gzip = request
+                            .header(b"accept-encoding")
+                            .map(|v| v.windows(4).any(|w| w == b"gzip"))
+                            .unwrap_or(false);
+
+                        let mut res = Response::new(
+                            write_buf.as_write_buf(),
+                            sec_headers,
+                            accepts_gzip,
+                            comp_threshold,
+                        );
+                        if config.catch_panics {
+                            let result = safety::catch_handler_mut(|| {
+                                let n = handler(&request, &mut res);
+                                Ok(n)
+                            });
+                            if let Err(e) = result.into_result() {
+                                eprintln!("[tachyon] Handler failed: {}", e);
+                                res = Response::new(
+                                    write_buf.as_write_buf(),
+                                    sec_headers,
+                                    accepts_gzip,
+                                    comp_threshold,
+                                );
+                                res.json(500, b"{\"error\":\"internal\"}");
+                            }
+                        } else {
+                            handler(&request, &mut res);
+                        };
+
+                        // WRITE response
+                        let send_data = res.data();
+                        if res.is_overflow() {
+                            if stream.write_all(send_data).is_err() {
+                                break 'conn;
+                            }
+                        } else if rio_or_write(&rio_conn, write_buf_id, &mut stream, send_data)
+                            .is_err()
+                        {
+                            break 'conn;
+                        }
+
+                        // Check Connection: close or HTTP/1.0
+                        if request.version_minor == 0
+                            || request
+                                .header(b"connection")
+                                .map(|v| v == b"close")
+                                .unwrap_or(false)
+                        {
+                            break 'conn;
+                        }
                     }
                 }
 

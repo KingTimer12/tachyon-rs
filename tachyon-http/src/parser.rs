@@ -26,6 +26,10 @@ pub enum ParseError {
 /// # Zero-copy guarantee
 /// The returned `Request` borrows directly from `buf`. No data is copied
 /// or allocated during parsing. This is the key FaF optimization.
+///
+/// # Pipelining
+/// The request's `body` is bounded by `Content-Length` (if present).
+/// Use `Request::consumed()` to find where the next pipelined request starts.
 #[inline]
 pub fn parse(buf: &[u8]) -> ParseResult<'_> {
     // Find end of headers (double CRLF)
@@ -79,19 +83,29 @@ pub fn parse(buf: &[u8]) -> ParseResult<'_> {
 
     // Body starts after the double CRLF
     let body_offset = header_end + 4; // +4 for \r\n\r\n
-    let body = if body_offset < buf.len() {
-        &buf[body_offset..]
-    } else {
-        &[]
-    };
 
-    ParseResult::Complete(Box::new(Request {
+    // Build a temporary request to extract Content-Length via the header() helper
+    let mut req = Request {
         method,
         path,
         version_minor,
         headers,
         header_count,
-        body,
+        body: &[],
         body_offset,
-    }))
+    };
+
+    // Determine body length from Content-Length header (for pipelining support).
+    // Without Content-Length, GET/HEAD/DELETE have no body; others consume all remaining bytes.
+    let content_length = req.content_length().unwrap_or(0);
+    let body_end = body_offset + content_length;
+
+    if body_end > buf.len() {
+        // Haven't received the full body yet
+        return ParseResult::Incomplete;
+    }
+
+    req.body = &buf[body_offset..body_end];
+
+    ParseResult::Complete(Box::new(req))
 }

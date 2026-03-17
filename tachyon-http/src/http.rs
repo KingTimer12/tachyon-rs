@@ -51,4 +51,11 @@ impl<'a> Request<'a> {
         // We still use from_utf8 (not unchecked) for safety.
         std::str::from_utf8(self.path).unwrap_or("/")
     }
+
+    /// Total bytes consumed by this request (headers + body).
+    /// Used for HTTP pipelining: the next request starts at `&buf[req.consumed()..]`.
+    #[inline]
+    pub fn consumed(&self) -> usize {
+        self.body_offset + self.body.len()
+    }
 }

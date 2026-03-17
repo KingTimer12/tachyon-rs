@@ -5,5 +5,6 @@ mod utils;
 mod tests;
 
 pub mod http;
+pub mod json;
 pub mod parser;
 pub mod response;

@@ -196,4 +196,32 @@ impl<'a> Response<'a> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Write a JSON response built with the zero-alloc `JsonWriter`.
+    ///
+    /// The closure receives a `JsonWriter` backed by a stack buffer.
+    /// The resulting JSON is used as the response body — no heap allocation
+    /// for the JSON itself.
+    ///
+    /// ```ignore
+    /// res.json_writer(200, |w| {
+    ///     w.object(|w| {
+    ///         w.key("message").string_raw("Hello, World!");
+    ///         w.key("id").int(42);
+    ///     });
+    /// });
+    /// ```
+    pub fn json_writer(
+        &mut self,
+        status: u16,
+        f: impl FnOnce(&mut tachyon_http::json::JsonWriter),
+    ) -> usize {
+        // Use a 4KB stack buffer for building the JSON body.
+        // For responses larger than this, the caller should use `json()` with a pre-built body.
+        let mut json_buf = [0u8; 4096];
+        let mut writer = tachyon_http::json::JsonWriter::new(&mut json_buf);
+        f(&mut writer);
+        let json_len = writer.finish();
+        self.json(status, &json_buf[..json_len])
+    }
 }

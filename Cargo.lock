@@ -417,6 +417,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "itoa"
+version = "1.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
+
+[[package]]
 name = "libc"
 version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -669,6 +675,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
+name = "ryu"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -769,7 +781,7 @@ dependencies = [
 
 [[package]]
 name = "tachyon-core"
-version = "0.2.13"
+version = "0.2.15"
 dependencies = [
  "flate2",
  "may",
@@ -780,14 +792,16 @@ dependencies = [
 
 [[package]]
 name = "tachyon-http"
-version = "0.2.13"
+version = "0.2.15"
 dependencies = [
+ "itoa",
+ "ryu",
  "tachyon-simd",
 ]
 
 [[package]]
 name = "tachyon-napi"
-version = "0.2.13"
+version = "0.2.15"
 dependencies = [
  "may",
  "napi",
@@ -800,11 +814,11 @@ dependencies = [
 
 [[package]]
 name = "tachyon-pool"
-version = "0.2.13"
+version = "0.2.15"
 
 [[package]]
 name = "tachyon-simd"
-version = "0.2.13"
+version = "0.2.15"
 dependencies = [
  "cxx",
  "cxx-build",

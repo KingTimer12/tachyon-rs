@@ -55,5 +55,12 @@ size_t serialize_json(
 // Each option is applied independently — failure of one doesn't block others.
 int32_t apply_socket_tuning(int64_t fd, const SocketTuning& tuning);
 
+// Pin the current thread to a specific CPU core (sched_setaffinity on Linux).
+// Returns 0 on success, -errno on failure. No-op (returns 0) on non-Linux.
+int32_t set_cpu_affinity(int32_t cpu_id);
+
+// Get the number of available CPU cores.
+int32_t get_cpu_count();
+
 } // namespace simd
 } // namespace tachyon

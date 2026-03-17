@@ -46,16 +46,8 @@ class Tachyon {
     return this
   }
 
-  private transformToResponse(response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
-    if (typeof response === "string") {
-      return () => new TachyonResponse(200, response).text()
-    } else if (typeof response === "function") {
-      return response
-    } else {
-      // Pre-serialize once at registration time, not per request
-      const serialized = JSON.stringify(response)
-      return () => new TachyonResponse(200, serialized)
-    }
+  private transformToResponse(response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown> | Array<Record<string, unknown>>) {
+    return typeof response === "function" ? response : () => new TachyonResponse(200, response)
   }
 
   public get(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
@@ -92,7 +84,7 @@ class Tachyon {
       // --- Pre-request hooks ---
       for (const plugin of this.plugins) {
         const result = plugin.pre?.(req)
-        if (result) return result.json()  // short-circuit
+        if (result) return result.toRaw()  // short-circuit
       }
 
       // --- Route handler ---
@@ -107,7 +99,7 @@ class Tachyon {
         if (result) res = result  // replace response
       }
 
-      return res.json()
+      return res.toRaw()
     })
   }
 

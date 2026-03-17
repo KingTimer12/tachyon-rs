@@ -17,6 +17,30 @@ pub const ENCODING_GZIP: &[u8] = b"Content-Encoding: gzip\r\n";
 pub const VARY_ACCEPT_ENCODING: &[u8] = b"Vary: Accept-Encoding\r\n";
 pub const CRLF: &[u8] = b"\r\n";
 
+const CL_PREFIX: &[u8] = b"Content-Length: ";
+
+/// Write "Content-Length: NNN\r\n" directly into `out` with zero heap allocation.
+/// Returns the number of bytes written.
+/// Max size: 16 (prefix) + 20 (u64 digits) + 2 (\r\n) = 38 bytes.
+#[inline(always)]
+pub fn write_content_length(out: &mut [u8], body_len: usize) -> usize {
+    let mut pos = CL_PREFIX.len();
+    out[..pos].copy_from_slice(CL_PREFIX);
+    let mut itoa_buf = itoa::Buffer::new();
+    let digits = itoa_buf.format(body_len);
+    out[pos..pos + digits.len()].copy_from_slice(digits.as_bytes());
+    pos += digits.len();
+    out[pos] = b'\r';
+    out[pos + 1] = b'\n';
+    pos + 2
+}
+
+/// Returns the byte length of the "Content-Length: NNN\r\n" header for a given body size.
+#[inline(always)]
+pub fn content_length_len(body_len: usize) -> usize {
+    CL_PREFIX.len() + itoa::Buffer::new().format(body_len).len() + 2
+}
+
 /// Security header presets — pre-concatenated for a single copy_from_slice per response.
 ///
 /// - `NONE`: no security headers (maximum throughput, user handles security externally)
@@ -74,10 +98,9 @@ pub fn response_size(
     custom_headers: &[u8],
     date_header: &[u8],
 ) -> usize {
-    let cl_header = format!("Content-Length: {}\r\n", body.len());
     status.len()
         + content_type.len()
-        + cl_header.len()
+        + content_length_len(body.len())
         + CONNECTION_KEEP.len()
         + date_header.len()
         + security_headers.len()
@@ -114,10 +137,8 @@ pub fn write_response(
     write_bytes!(status);
     write_bytes!(content_type);
 
-    // Content-Length header
-    let cl_header = format!("Content-Length: {}\r\n", body.len());
-    let cl_bytes = cl_header.as_bytes();
-    write_bytes!(cl_bytes);
+    // Content-Length: zero-alloc via itoa
+    pos += write_content_length(&mut buf[pos..], body.len());
 
     write_bytes!(CONNECTION_KEEP);
 
@@ -164,8 +185,10 @@ pub fn write_response_vec(
     let mut buf = Vec::with_capacity(size);
     buf.extend_from_slice(status);
     buf.extend_from_slice(content_type);
-    let cl_header = format!("Content-Length: {}\r\n", body.len());
-    buf.extend_from_slice(cl_header.as_bytes());
+    // Content-Length: zero-alloc via itoa into stack buffer, then copy
+    let mut cl_buf = [0u8; 40];
+    let cl_len = write_content_length(&mut cl_buf, body.len());
+    buf.extend_from_slice(&cl_buf[..cl_len]);
     buf.extend_from_slice(CONNECTION_KEEP);
     if !date_header.is_empty() {
         buf.extend_from_slice(date_header);

@@ -6,7 +6,7 @@ use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use napi::{Result, Status, bindgen_prelude::Function};
 use napi_derive::napi;
 
-use crate::handle::{TachyonRawHeader, TachyonRawRequest, TachyonRawResponse};
+use crate::handle::{TachyonRawHeader, TachyonRawJsonField, TachyonRawRequest, TachyonRawResponse};
 
 mod handle;
 
@@ -22,6 +22,41 @@ fn method_str(m: tachyon_http::methods::Method) -> &'static str {
     tachyon_http::methods::Method::Head => "HEAD",
     tachyon_http::methods::Method::Options => "OPTIONS",
     tachyon_http::methods::Method::Other => "OTHER",
+  }
+}
+
+/// Recursively serialize a `TachyonRawJsonField` into the `JsonWriter`.
+/// Supports objects, arrays, strings, numbers, bools, null, and raw JSON.
+fn write_json_field(w: &mut tachyon_http::json::JsonWriter, f: &TachyonRawJsonField) {
+  // Write key if present (object field vs array element)
+  if let Some(ref key) = f.key {
+    w.key(key);
+  }
+  match f.value_type.as_deref().unwrap_or("string") {
+    "object" => {
+      w.object(|w| {
+        if let Some(ref children) = f.children {
+          for child in children {
+            write_json_field(w, child);
+          }
+        }
+      });
+    }
+    "array" => {
+      w.array(|w| {
+        if let Some(ref children) = f.children {
+          for child in children {
+            write_json_field(w, child);
+          }
+        }
+      });
+    }
+    "number" | "bool" | "null" | "raw" => {
+      w.raw(f.value.as_deref().unwrap_or("null").as_bytes());
+    }
+    _ => {
+      w.string(f.value.as_deref().unwrap_or(""));
+    }
   }
 }
 
@@ -166,35 +201,43 @@ impl TachyonRawServer {
     let rust_handler: tachyon_core::server::Handler = Arc::new(
       move |req: &tachyon_http::http::Request, res: &mut tachyon_core::response::Response| {
         // Convert Rust request → JS-friendly struct.
-        // method_str() returns &'static str — no allocation.
-        // path and body require owned Strings for the FFI boundary.
+        // method_str() returns &'static str — zero-alloc.
+        // path and body require owned Strings for the napi FFI boundary.
+        // HTTP headers/paths are always valid ASCII (valid UTF-8).
+        let method = method_str(req.method).to_string();
+        let path = req.path_str().to_string();
+        let body = if req.body.is_empty() {
+          None
+        } else {
+          // Safety: HTTP bodies that make it here have been read from a TCP stream.
+          // from_utf8 is cheap for valid UTF-8 (just a validation scan, no alloc).
+          // Fall back to lossy only if truly invalid (shouldn't happen in practice).
+          Some(match std::str::from_utf8(req.body) {
+            Ok(s) => s.to_string(),
+            Err(_) => String::from_utf8_lossy(req.body).into_owned(),
+          })
+        };
+        let headers: Vec<TachyonRawHeader> = req.headers[..req.header_count]
+          .iter()
+          .filter_map(|h| h.as_ref())
+          .map(|h| {
+            // HTTP header names are ASCII (RFC 7230), values are ISO-8859-1 but
+            // practically always ASCII. Use unchecked for the hot path.
+            let name = unsafe { std::str::from_utf8_unchecked(h.name) }.to_string();
+            let value = unsafe { std::str::from_utf8_unchecked(h.value) }.to_string();
+            TachyonRawHeader { name, value }
+          })
+          .collect();
         let ts_req = TachyonRawRequest {
-          method: method_str(req.method).to_string(),
-          path: req.path_str().to_string(),
-          body: if req.body.is_empty() {
-            None
-          } else {
-            String::from_utf8(req.body.to_vec()).ok()
-          },
-          headers: req.headers[..req.header_count]
-            .iter()
-            .filter_map(|h| h.as_ref())
-            .map(|h| TachyonRawHeader {
-              name: String::from_utf8_lossy(h.name).into_owned(),
-              value: String::from_utf8_lossy(h.value).into_owned(),
-            })
-            .collect(),
+          method,
+          path,
+          body,
+          headers,
         };
 
-        // Bridge sync coroutine ↔ async Node event loop:
-        // 1. Create an unbounded channel (no backpressure on JS thread)
-        // 2. call_with_return_value schedules JS on Node's event loop
-        // 3. Callback sends the result and UNPARKS the coroutine
-        // 4. Coroutine PARKS (zero CPU) until JS responds
-        //
-        // may's park/unpark is permit-based: if unpark() is called before
-        // park(), the next park() returns immediately (no lost wakeup).
-        let (tx, rx) = std::sync::mpsc::channel::<Option<TachyonRawResponse>>();
+        // Bridge sync coroutine ↔ async Node event loop via bounded channel.
+        // sync_channel(1) pre-allocates the single slot — no heap alloc on send.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Option<TachyonRawResponse>>(1);
         let co = may::coroutine::current();
 
         let status = handler_ref.call_with_return_value(
@@ -218,16 +261,38 @@ impl TachyonRawServer {
         match rx.try_recv().ok().flatten() {
           Some(ts_res) => {
             let status_code = ts_res.status.unwrap_or(200) as u16;
-            let body = ts_res.body.as_deref().unwrap_or("");
             // Apply custom headers from the JS handler
             if let Some(headers) = &ts_res.headers {
               for h in headers {
                 res.header(h.name.as_bytes(), h.value.as_bytes());
               }
             }
-            match ts_res.content_type.as_deref().unwrap_or("json") {
-              "text" | "plain" => res.text(status_code, body.as_bytes()),
-              _ => res.json(status_code, body.as_bytes()),
+            // Priority: json > array > body
+            if let Some(fields) = &ts_res.json {
+              // Path 1: json → object {...} via zero-alloc JsonWriter
+              res.json_writer(status_code, |w| {
+                w.object(|w| {
+                  for f in fields {
+                    write_json_field(w, f);
+                  }
+                });
+              })
+            } else if let Some(elements) = &ts_res.array {
+              // Path 2: array → [...] via zero-alloc JsonWriter
+              res.json_writer(status_code, |w| {
+                w.array(|w| {
+                  for f in elements {
+                    write_json_field(w, f);
+                  }
+                });
+              })
+            } else {
+              // Path 3: body → uses content_type
+              let body = ts_res.body.as_deref().unwrap_or("");
+              match ts_res.content_type.as_deref().unwrap_or("json") {
+                "text" | "plain" => res.text(status_code, body.as_bytes()),
+                _ => res.json(status_code, body.as_bytes()),
+              }
             }
           }
           // JS handler threw or channel disconnected

@@ -104,6 +104,15 @@ mod ffi {
 
         /// Poll send completion. >= 0 = bytes, -1 = not ready, < -1 = error.
         fn rio_poll_send(ctx: i64) -> i32;
+
+        // --- CPU Affinity ---
+
+        /// Pin the current thread to a specific CPU core (Linux sched_setaffinity).
+        /// Returns 0 on success, -errno on failure. No-op on non-Linux.
+        fn set_cpu_affinity(cpu_id: i32) -> i32;
+
+        /// Get the number of available CPU cores.
+        fn get_cpu_count() -> i32;
     }
 }
 
