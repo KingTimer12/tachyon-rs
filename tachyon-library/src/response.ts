@@ -74,7 +74,7 @@ class TachyonResponse {
     return {
       status: this.status,
       body: typeof this.body === 'string' ? this.body : undefined,
-      contentType: this._contentType,
+      contentType: typeof this.body === 'string' ? 'text' : this._contentType,
       headers: this.headers.length > 0 ? this.headers : undefined,
       json: rustJson?.json,
       array: rustJson?.array,
