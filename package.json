@@ -1,6 +1,6 @@
 {
   "name": "tachyon-rs",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "description": "Template project for writing node package with napi-rs",
   "workspaces": [
     "tachyon-library",

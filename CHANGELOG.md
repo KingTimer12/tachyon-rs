@@ -4,7 +4,21 @@
 
 ### Bug Fixes
 
+- Clippy problem ([d7c3002](https://github.com/KingTimer12/tachyon-rs/commit/d7c3002871fa471fe2b7ab1cf72db1ad4de6df7c))
+
+### Miscellaneous
+
+- New methods for improve speed ([e458020](https://github.com/KingTimer12/tachyon-rs/commit/e45802054462fa842f58301a1ec000471a20945d))
+
+## [0.2.15] - 2026-03-16
+
+### Bug Fixes
+
 - No response 'cause couratine using 100% CPU) ([b4ad706](https://github.com/KingTimer12/tachyon-rs/commit/b4ad70673056502c2b7a4cf37c998d977a646774))
+
+### Miscellaneous
+
+- Release v0.2.15 ([5ee7d8b](https://github.com/KingTimer12/tachyon-rs/commit/5ee7d8b6574891b97673e7fcbfd66bca8d863b5e))
 
 ## [0.2.14] - 2026-03-16
 
