@@ -70,12 +70,7 @@ pub struct ServerConfig {
     pub bind_addr: String,
 
     /// Number of worker threads. Default: number of CPU cores.
-    /// FaF uses 1 thread per core; May does the same internally.
     pub workers: usize,
-
-    /// Coroutine stack size in bytes. May's default is 32KB.
-    /// Increase if your handler does deep recursion or large stack allocs.
-    pub coroutine_stack_size: usize,
 
     /// Buffer pool: number of pre-allocated buffers per worker thread.
     /// Higher = more memory upfront, fewer allocation misses under load.
@@ -113,7 +108,6 @@ impl Default for ServerConfig {
         Self {
             bind_addr: "0.0.0.0:3000".to_string(),
             workers: num_cpus(),
-            coroutine_stack_size: 64 * 1024,
             buffers_per_worker: 128,
             buffer_size: 8 * 1024,
             handler_timeout: Duration::from_secs(30),
@@ -137,11 +131,6 @@ impl ServerConfig {
 
     pub fn workers(mut self, n: usize) -> Self {
         self.workers = n.max(1);
-        self
-    }
-
-    pub fn stack_size(mut self, bytes: usize) -> Self {
-        self.coroutine_stack_size = bytes;
         self
     }
 

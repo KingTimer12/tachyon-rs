@@ -109,6 +109,17 @@ function requireNative() {
   } else if (process.platform === 'win32') {
     if (process.arch === 'x64') {
       try {
+        const binding = require('@tachyon-rs/server-win32-x64-gnu')
+        const bindingPackageVersion = require('@tachyon-rs/server-win32-x64-gnu/package.json').version
+        if (bindingPackageVersion !== '0.2.16' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.16 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        }
+        return binding
+      } catch (e) {
+        loadErrors.push(e)
+      }
+      } else {
+        try {
         return require('./tachyon-napi.win32-x64-msvc.node')
       } catch (e) {
         loadErrors.push(e)

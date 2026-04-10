@@ -4,39 +4,28 @@ Native Rust HTTP server with Node.js/Bun bindings. Built for speed, security, an
 
 **[Leia em Portugues](README.pt-BR.md)**
 
-## Inspiration
-
-Tachyon combines ideas from projects that solve specific problems really well:
-
-- **FaF** — Callback model with pre-allocated buffers, zero-copy parsing, and thread-local pool. Tachyon's core architecture follows this pattern.
-- **picohttpparser** — HTTP delimiter scanning with SIMD (SSE4.2/AVX2/NEON). 68-90% faster than byte-by-byte.
-- **simdjson** — High-performance JSON parsing bridge via C++.
-- **May** — Lightweight cooperative coroutines. One per connection, no OS thread overhead.
-- **Windows RIO** — Registered I/O for zero-copy networking on Windows 8+.
-
 ## Why tachyon?
 
-| | tachyon | Express | Fastify | Hono |
+| | tachyon | Express | Fastify | Elysia |
 |---|---|---|---|---|
-| Runtime | Rust (coroutines) | Node.js (event loop) | Node.js (event loop) | Node.js (event loop) |
-| HTTP parser | SIMD C++ (zero-copy) | http_parser (C) | llhttp (C) | llhttp (C) |
+| Runtime | Rust (Tokio workers) | Node.js | Node.js | Bun |
+| HTTP parser | SIMD C++ (zero-copy) | llhttp (C) | llhttp (C) | llhttp (C) |
+| Routing | Rust O(1) HashMap | JS trie | JS radix | JS radix |
 | Buffer alloc | Pre-allocated pool (0 alloc/req) | GC-managed | GC-managed | GC-managed |
-| Threads | N coroutines per worker thread | Single-threaded | Single-threaded | Single-threaded |
-| JS overhead | Minimal (handler only) | Everything in JS | Everything in JS | Everything in JS |
+| 404 handling | Rust — zero JS call | JS | JS | JS |
+| JS overhead | Handler only | Everything | Everything | Everything |
 
-The server loop, HTTP parsing, buffer pool, and I/O run in Rust. JS only executes the user's handler.
+The server loop, HTTP parsing, buffer pool, routing dispatch, and 404 handling all run in Rust. JavaScript only executes the matched route handler.
 
 ## Usage
 
 ```typescript
-import { Tachyon, TachyonResponse } from 'tachyon-rs'
+import { Tachyon, TachyonResponse, status } from 'tachyon-rs'
 
 new Tachyon()
   .get('/', 'Hello Tachyon!')
   .get('/json', { message: 'fast' })
-  .get('/dynamic', (req) => {
-    return new TachyonResponse(200, JSON.stringify({ path: req.path }))
-  })
+  .get('/dynamic', (req) => status(200, { path: req.path }))
   .listen(3000)
 ```
 
@@ -45,14 +34,13 @@ new Tachyon()
 Plugins use lifecycle hooks: `pre` (before handler) and `pos` (after handler).
 
 ```typescript
-import { Tachyon, TachyonResponse, type Plugin } from 'tachyon-rs'
+import { Tachyon, status, type Plugin } from 'tachyon-rs'
 
-// JWT — blocks requests without token
+// Auth — blocks requests without token
 const auth: Plugin = {
   pre: (req) => {
-    const token = req.header('authorization')
-    if (!token) {
-      return new TachyonResponse(401, JSON.stringify({ error: 'Unauthorized' }))
+    if (!req.header('authorization')) {
+      return status(401, { error: 'Unauthorized' })
     }
   }
 }
@@ -67,29 +55,23 @@ const cors: Plugin = {
         .header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
     }
   },
-  pos: (_req, res) => {
-    return res.header('Access-Control-Allow-Origin', '*')
-  }
+  pos: (_req, res) => res.header('Access-Control-Allow-Origin', '*')
 }
 
 // Logger
 const logger: Plugin = {
-  pos: (req, res) => {
-    console.log(`${req.method} ${req.path} -> ${res.status}`)
-  }
+  pos: (req, res) => console.log(`${req.method} ${req.path} -> ${res.status}`)
 }
 
 new Tachyon({ security: 'strict' })
   .use(cors)
   .use(auth)
   .use(logger)
-  .get('/api/users', () => new TachyonResponse(200, '[]'))
+  .get('/api/users', () => status(200, []))
   .listen(3000)
 ```
 
 ## Security
-
-Security headers are configured by preset on the server:
 
 ```typescript
 new Tachyon({ security: 'basic' })   // default
@@ -108,15 +90,11 @@ new Tachyon({ security: 'none' })    // max speed (use behind a proxy)
 Large responses are automatically gzip-compressed when the client supports it (`Accept-Encoding: gzip`). Compression happens in Rust, transparent to the JS handler.
 
 ```typescript
-new Tachyon()                              // default: compress bodies >= 1KB
-new Tachyon({ compressionThreshold: 0 })   // compress everything
-new Tachyon({ compressionThreshold: 4096 })// compress bodies >= 4KB
-new Tachyon({ compressionThreshold: -1 })  // disable compression
+new Tachyon()                               // default: compress bodies >= 1KB
+new Tachyon({ compressionThreshold: 0 })    // compress everything
+new Tachyon({ compressionThreshold: 4096 }) // compress bodies >= 4KB
+new Tachyon({ compressionThreshold: -1 })   // disable compression
 ```
-
-- Bodies below the threshold are sent uncompressed (zero overhead)
-- If gzip doesn't reduce size, sends uncompressed
-- Bodies larger than the buffer pool (8KB) use heap allocation automatically
 
 ## Architecture
 
@@ -124,45 +102,55 @@ new Tachyon({ compressionThreshold: -1 })  // disable compression
 HTTP Request
     |
     v
-[Rust] TcpListener (May coroutines, N workers)
+[Rust] TcpListener (Tokio multi-thread, N workers)
     |
     v
 [Rust] Buffer Pool (pre-allocated, thread-local, RAII)
     |
     v
-[C++] SIMD HTTP Parser (AVX2/SSE4.2/NEON)
+[C++] SIMD HTTP Parser (AVX2/SSE4.2/NEON, zero-copy)
     |
     v
-[Rust -> JS] NAPI bridge (ThreadsafeFunction)
+[Rust] O(1) Route Dispatch (method_id → path HashMap)
+    |                |
+    |           404 in Rust (zero JS call)
+    v
+[Rust → JS] NAPI bridge (ThreadsafeFunction, rx.await — no thread block)
     |
     v
-[JS] Plugin hooks (pre) -> Route handler -> Plugin hooks (pos)
+[JS] Plugin hooks (pre) → Route handler → Plugin hooks (pos)
     |
     v
-[Rust] Response buffer -> gzip (if threshold) -> write_all / RIO zero-copy
+[Rust] Response buffer → gzip (if above threshold) → write_all
 ```
+
+### Bridge optimizations
+
+- **Rust routing**: each route has its own JS function registered at startup. Dispatch is a two-level `HashMap<method_id, HashMap<path, handler>>` lookup — O(1), no JS overhead.
+- **Flat headers**: request headers are passed as a single `"name\tvalue\n"` string (1 allocation) instead of a `Vec` of structs (20+ allocations per request). Parsed lazily in JS only if accessed.
+- **Async bridge**: uses `rx.await` (Tokio oneshot channel) instead of `block_in_place`, so worker threads are never blocked — no thread explosion under load.
 
 ## Structure
 
 ```
 tachyon-rs/
-  tachyon-core/       Server, config, response builder, RIO
-  tachyon-http/       Zero-copy HTTP parser, response constants
+  tachyon-core/       Server, config, response builder
+  tachyon-http/       Zero-copy HTTP parser, JSON writer
   tachyon-pool/       Thread-local buffer pool with RAII
-  tachyon-simd/       C++ bridge (SIMD scan, socket tuning, RIO)
-  tachyon-napi/       NAPI bindings for Node.js/Bun
-  tachyon-library/    TypeScript API (Tachyon, plugins, routing)
+  tachyon-simd/       C++ bridge (SIMD scan, socket tuning)
+  tachyon-napi/       NAPI bindings (route registration, request bridge)
+  tachyon-library/    TypeScript API (Tachyon class, plugins, routing)
   example/            Usage example
 ```
 
 ## Build
 
 ```bash
-# Build native binding
+# Build native binding + TypeScript library
 npm run build
 
 # Run example
-npm run example
+bun example/index.ts
 
 # Tests
 cargo test

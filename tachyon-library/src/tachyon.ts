@@ -1,15 +1,10 @@
 import { TachyonRawServer } from "@tachyon-rs/server";
 import { TachyonRequest } from "./request";
 import { TachyonResponse } from "./response";
+import type { TachyonConfig } from "./config";
+import { status } from "./helper";
 
-export type SecurityPreset = 'none' | 'basic' | 'strict'
-
-export interface TachyonConfig {
-  workers?: number
-  security?: SecurityPreset
-  /** Minimum body size in bytes to trigger gzip compression. 0 = compress all, -1 = disabled. Default: 1024 */
-  compressionThreshold?: number
-}
+const methods = ["GET", "POST", "PUT", "DELETE"]
 
 /**
  * Pre-request hook. Runs before the route handler.
@@ -47,26 +42,26 @@ class Tachyon {
   }
 
   private transformToResponse(response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown> | Array<Record<string, unknown>>) {
-    return typeof response === "function" ? response : () => new TachyonResponse(200, response)
+    return typeof response === "function" ? response : () => status(200, response)
   }
 
   public get(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
-    this.routes.set('GET@'+path, this.transformToResponse(response))
+    this.routes.set('0@'+path, this.transformToResponse(response))
     return this
   }
 
   public post(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
-    this.routes.set('POST@'+path, this.transformToResponse(response))
+    this.routes.set('1@'+path, this.transformToResponse(response))
     return this
   }
 
   public put(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
-    this.routes.set('PUT@'+path, this.transformToResponse(response))
+    this.routes.set('2@'+path, this.transformToResponse(response))
     return this
   }
 
   public delete(path: string, response: ((req: TachyonRequest) => TachyonResponse) | string | Record<string, unknown>) {
-    this.routes.set('DELETE@'+path, this.transformToResponse(response))
+    this.routes.set('3@'+path, this.transformToResponse(response))
     return this
   }
 
@@ -78,29 +73,38 @@ class Tachyon {
       compressionThreshold: this.config.compressionThreshold,
     })
 
-    server.start((raw) => {
-      const req = new TachyonRequest(raw)
+    const plugins = this.plugins
 
-      // --- Pre-request hooks ---
-      for (const plugin of this.plugins) {
-        const result = plugin.pre?.(req)
-        if (result) return result.toRaw()  // short-circuit
-      }
+    // Register each route individually — Rust dispatches with O(1) HashMap lookup.
+    // Unknown paths return 404 entirely in Rust, zero JS call overhead.
+    for (const [key, handler] of this.routes) {
+      const atIdx = key.indexOf('@')
+      const method = parseInt(key.slice(0, atIdx))
+      const path = key.slice(atIdx + 1)
 
-      // --- Route handler ---
-      const handler = this.routes.get(req.method + '@' + req.path)
-      let res = handler
-        ? handler(req)
-        : new TachyonResponse(404, 'Not Found')
+      server.route(methods[method] ?? 'GET', path, (raw) => {
+        const req = new TachyonRequest(raw)
 
-      // --- Post-response hooks ---
-      for (const plugin of this.plugins) {
-        const result = plugin.pos?.(req, res)
-        if (result) res = result  // replace response
-      }
+        // --- Pre-request hooks ---
+        for (const plugin of plugins) {
+          const result = plugin.pre?.(req)
+          if (result) return result.toRaw()
+        }
 
-      return res.toRaw()
-    })
+        // --- Route handler ---
+        let res = handler(req)
+
+        // --- Post-response hooks ---
+        for (const plugin of plugins) {
+          const result = plugin.pos?.(req, res)
+          if (result) res = result
+        }
+
+        return typeof (res as any).toRaw === 'function' ? (res as any).toRaw() : res as any
+      })
+    }
+
+    server.listen()
   }
 
 }

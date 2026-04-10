@@ -12,5 +12,5 @@ simd = ["dep:tachyon-simd"]
 tachyon-simd = { workspace = true, optional = true }
 tachyon-http = { workspace = true }
 tachyon-pool = { workspace = true }
-may = { workspace = true }
+tokio = { workspace = true }
 flate2 = { workspace = true }

@@ -1,16 +1,44 @@
 #![deny(clippy::all)]
 
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use napi::{Result, Status, bindgen_prelude::Function};
 use napi_derive::napi;
 
-use crate::handle::{TachyonRawHeader, TachyonRawJsonField, TachyonRawRequest, TachyonRawResponse};
+use crate::handle::{TachyonRawJsonField, TachyonRawRequest, TachyonRawResponse};
 
 mod handle;
 
-/// Zero-alloc method → static str. Avoids Debug formatting per request.
+/// Per-route async handler: receives owned request, returns a WriteFn future.
+type AsyncRouteFn = Arc<
+  dyn Fn(TachyonRawRequest) -> Pin<Box<dyn Future<Output = tachyon_core::server::WriteFn> + Send>>
+    + Send
+    + Sync,
+>;
+
+/// Map: method_id → path_bytes → handler
+type RouteMap = Arc<HashMap<u8, HashMap<Box<[u8]>, AsyncRouteFn>>>;
+
+/// Zero-alloc method → u8 id for HashMap key.
+#[inline(always)]
+fn method_to_id(m: tachyon_http::methods::Method) -> u8 {
+  match m {
+    tachyon_http::methods::Method::Get => 0,
+    tachyon_http::methods::Method::Post => 1,
+    tachyon_http::methods::Method::Put => 2,
+    tachyon_http::methods::Method::Delete => 3,
+    tachyon_http::methods::Method::Patch => 4,
+    tachyon_http::methods::Method::Head => 5,
+    tachyon_http::methods::Method::Options => 6,
+    tachyon_http::methods::Method::Other => 7,
+  }
+}
+
+/// Zero-alloc method → static str. For passing to JS handlers.
 #[inline(always)]
 fn method_str(m: tachyon_http::methods::Method) -> &'static str {
   match m {
@@ -25,10 +53,38 @@ fn method_str(m: tachyon_http::methods::Method) -> &'static str {
   }
 }
 
+/// Parse string method name → u8 id (used when registering routes from JS).
+fn str_to_method_id(s: &str) -> u8 {
+  match s {
+    "GET" => 0,
+    "POST" => 1,
+    "PUT" => 2,
+    "DELETE" => 3,
+    "PATCH" => 4,
+    "HEAD" => 5,
+    "OPTIONS" => 6,
+    _ => 7,
+  }
+}
+
+/// Build flat headers string: "name\tvalue\n..." — 1 allocation for the whole header block.
+fn build_flat_headers(req: &tachyon_http::http::Request<'_>) -> String {
+  let mut s = String::new();
+  for h in &req.headers[..req.header_count] {
+    if let Some(h) = h.as_ref() {
+      let name = unsafe { std::str::from_utf8_unchecked(h.name) };
+      let value = unsafe { std::str::from_utf8_unchecked(h.value) };
+      s.push_str(name);
+      s.push('\t');
+      s.push_str(value);
+      s.push('\n');
+    }
+  }
+  s
+}
+
 /// Recursively serialize a `TachyonRawJsonField` into the `JsonWriter`.
-/// Supports objects, arrays, strings, numbers, bools, null, and raw JSON.
 fn write_json_field(w: &mut tachyon_http::json::JsonWriter, f: &TachyonRawJsonField) {
-  // Write key if present (object field vs array element)
   if let Some(ref key) = f.key {
     w.key(key);
   }
@@ -60,46 +116,62 @@ fn write_json_field(w: &mut tachyon_http::json::JsonWriter, f: &TachyonRawJsonFi
   }
 }
 
+/// Build the WriteFn closure from a JS response (or None on handler error).
+fn make_write_fn(ts_res_opt: Option<TachyonRawResponse>) -> tachyon_core::server::WriteFn {
+  Box::new(
+    move |res: &mut tachyon_core::response::Response<'_>| match ts_res_opt {
+      None => res.json(500, b"{\"error\":\"handler error\"}"),
+      Some(ts_res) => {
+        let status_code = ts_res.status.unwrap_or(200) as u16;
+        if let Some(headers) = &ts_res.headers {
+          for h in headers {
+            res.header(h.name.as_bytes(), h.value.as_bytes());
+          }
+        }
+        if let Some(fields) = &ts_res.json {
+          res.json_writer(status_code, |w| {
+            w.object(|w| {
+              for f in fields {
+                write_json_field(w, f);
+              }
+            });
+          })
+        } else if let Some(elements) = &ts_res.array {
+          res.json_writer(status_code, |w| {
+            w.array(|w| {
+              for f in elements {
+                write_json_field(w, f);
+              }
+            });
+          })
+        } else {
+          let body = ts_res.body.as_deref().unwrap_or("");
+          match ts_res.content_type.as_deref().unwrap_or("json") {
+            "text" | "plain" => res.text(status_code, body.as_bytes()),
+            _ => res.json(status_code, body.as_bytes()),
+          }
+        }
+      }
+    },
+  )
+}
+
 /// Server configuration exposed to TypeScript.
-///
-/// ```typescript
-/// import { TachyonRawConfig } from 'tachyon';
-///
-/// const config = new TachyonRawConfig();
-/// config.bindAddr = '0.0.0.0:8080';
-/// config.workers = 4;
-/// ```
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct TachyonRawConfig {
-  /// Address to bind (default: "0.0.0.0:3000")
   pub bind_addr: Option<String>,
-  /// Number of worker threads (default: CPU count)
   pub workers: Option<u32>,
-  /// Coroutine stack size in KB (default: 64)
-  pub stack_size_kb: Option<u32>,
-  /// Buffer pool size per worker (default: 512)
   pub buffers_per_worker: Option<u32>,
-  /// Buffer size in bytes (default: 8192)
   pub buffer_size: Option<u32>,
-  /// Handler timeout in seconds (default: 30)
   pub timeout_secs: Option<u32>,
-  /// Enable TCP_NODELAY (default: true)
   pub tcp_nodelay: Option<bool>,
-  /// Enable SO_REUSEPORT (default: true, Linux/BSD only)
   pub reuse_port: Option<bool>,
-  /// Enable TCP Fast Open (default: true, Linux only)
   pub tcp_fastopen: Option<bool>,
-  /// SO_BUSY_POLL microseconds (default: 0 = disabled, requires root)
   pub busy_poll_us: Option<i32>,
-  /// SO_RCVBUF in bytes (default: 0 = OS default)
   pub recv_buf_size: Option<i32>,
-  /// SO_SNDBUF in bytes (default: 0 = OS default)
   pub send_buf_size: Option<i32>,
-  /// Security header preset: "none" | "basic" | "strict" (default: "basic")
   pub security: Option<String>,
-  /// Minimum body size in bytes to trigger gzip compression.
-  /// 0 = compress all, -1 = disabled. Default: 1024 (1KB).
   pub compression_threshold: Option<i32>,
 }
 
@@ -112,9 +184,6 @@ impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
     if let Some(w) = ts.workers {
       config = config.workers(w as usize);
     }
-    if let Some(s) = ts.stack_size_kb {
-      config = config.stack_size((s as usize) * 1024);
-    }
     if let Some(count) = ts.buffers_per_worker {
       let size = ts.buffer_size.unwrap_or(8192) as usize;
       config = config.buffer_pool(count as usize, size);
@@ -122,7 +191,6 @@ impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
     if let Some(t) = ts.timeout_secs {
       config = config.timeout(std::time::Duration::from_secs(t as u64));
     }
-    // Socket tuning
     if let Some(v) = ts.tcp_nodelay {
       config = config.tcp_nodelay(v);
     }
@@ -151,7 +219,7 @@ impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
     }
     if let Some(v) = ts.compression_threshold {
       if v < 0 {
-        config = config.compression(usize::MAX); // disabled
+        config = config.compression(usize::MAX);
       } else {
         config = config.compression(v as usize);
       }
@@ -160,22 +228,12 @@ impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
   }
 }
 
-/// The Tachyon server instance.
-///
-/// ```typescript
-/// import { TachyonRawServer } from 'tachyon';
-///
-/// const server = new TachyonRawServer({ bindAddr: '0.0.0.0:8080' });
-///
-/// // The handler runs in Rust coroutines — fast, safe, cross-platform
-/// server.start((req) => ({
-///     status: 200,
-///     body: JSON.stringify({ message: 'Hello from Tachyon!' }),
-/// }));
-/// ```
+/// The Tachyon server instance. Routes are registered in Rust for zero-overhead dispatch.
 #[napi]
 pub struct TachyonRawServer {
   config: tachyon_core::config::ServerConfig,
+  /// Registered routes: (method_id, path_bytes, handler)
+  routes: Vec<(u8, Box<[u8]>, AsyncRouteFn)>,
 }
 
 #[napi]
@@ -183,127 +241,112 @@ impl TachyonRawServer {
   #[napi(constructor)]
   pub fn new(config: Option<TachyonRawConfig>) -> Self {
     let config = config.map(|c| c.into()).unwrap_or_default();
-    Self { config }
+    Self {
+      config,
+      routes: Vec::new(),
+    }
   }
 
-  /// Start the server with a JavaScript handler function.
+  /// Register a route handler. Called once per route at startup from TypeScript.
   ///
-  /// The handler is called for each HTTP request from a Rust coroutine.
-  /// It receives a `TachyonRequest` and must return a `TachyonResponse`.
-  ///
-  /// The server runs on background threads — Node's event loop stays free.
+  /// The handler receives a `TachyonRawRequest` and returns a `TachyonRawResponse`.
+  /// Routing and 404 handling happen entirely in Rust — no JS call for unmatched paths.
   #[napi]
-  pub fn start(&self, handler: Function<TachyonRawRequest, TachyonRawResponse>) -> Result<()> {
-    // Create a thread-safe reference to the JS function.
-    // napi-rs handles the prevent-GC / prevent-drop dance internally.
-    let handler_ref = handler.build_threadsafe_function().build()?;
+  pub fn route(
+    &mut self,
+    method: String,
+    path: String,
+    handler: Function<TachyonRawRequest, TachyonRawResponse>,
+  ) -> Result<()> {
+    // Let Rust infer the full ThreadsafeFunction type from the Function parameter.
+    let ts_fn = Arc::new(handler.build_threadsafe_function().build()?);
 
-    let rust_handler: tachyon_core::server::Handler = Arc::new(
-      move |req: &tachyon_http::http::Request, res: &mut tachyon_core::response::Response| {
-        // Convert Rust request → JS-friendly struct.
-        // method_str() returns &'static str — zero-alloc.
-        // path and body require owned Strings for the napi FFI boundary.
-        // HTTP headers/paths are always valid ASCII (valid UTF-8).
-        let method = method_str(req.method).to_string();
-        let path = req.path_str().to_string();
-        let body = if req.body.is_empty() {
-          None
-        } else {
-          // Safety: HTTP bodies that make it here have been read from a TCP stream.
-          // from_utf8 is cheap for valid UTF-8 (just a validation scan, no alloc).
-          // Fall back to lossy only if truly invalid (shouldn't happen in practice).
-          Some(match std::str::from_utf8(req.body) {
-            Ok(s) => s.to_string(),
-            Err(_) => String::from_utf8_lossy(req.body).into_owned(),
-          })
-        };
-        let headers: Vec<TachyonRawHeader> = req.headers[..req.header_count]
-          .iter()
-          .filter_map(|h| h.as_ref())
-          .map(|h| {
-            // HTTP header names are ASCII (RFC 7230), values are ISO-8859-1 but
-            // practically always ASCII. Use unchecked for the hot path.
-            let name = unsafe { std::str::from_utf8_unchecked(h.name) }.to_string();
-            let value = unsafe { std::str::from_utf8_unchecked(h.value) }.to_string();
-            TachyonRawHeader { name, value }
-          })
-          .collect();
-        let ts_req = TachyonRawRequest {
-          method,
-          path,
-          body,
-          headers,
-        };
-
-        // Bridge sync coroutine ↔ async Node event loop via bounded channel.
-        // sync_channel(1) pre-allocates the single slot — no heap alloc on send.
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Option<TachyonRawResponse>>(1);
-        let co = may::coroutine::current();
-
-        let status = handler_ref.call_with_return_value(
-          ts_req,
+    let route_fn: AsyncRouteFn = Arc::new(move |req: TachyonRawRequest| {
+      let ts_fn = ts_fn.clone();
+      Box::pin(async move {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<TachyonRawResponse>>();
+        let status = ts_fn.call_with_return_value(
+          req,
           ThreadsafeFunctionCallMode::NonBlocking,
           move |result: napi::Result<TachyonRawResponse>, _env| {
             let _ = tx.send(result.ok());
-            co.unpark();
             Ok(())
           },
         );
+        let ts_res_opt = if status != Status::Ok {
+          None
+        } else {
+          rx.await.ok().flatten()
+        };
+        make_write_fn(ts_res_opt)
+      }) as Pin<Box<dyn Future<Output = tachyon_core::server::WriteFn> + Send>>
+    });
 
-        if status != Status::Ok {
-          return res.json(500, b"{\"error\":\"handler call failed\"}");
+    let method_id = str_to_method_id(&method);
+    let path_bytes: Box<[u8]> = path.into_bytes().into_boxed_slice();
+    self.routes.push((method_id, path_bytes, route_fn));
+    Ok(())
+  }
+
+  /// Start the server. Must be called after all routes are registered.
+  ///
+  /// Builds an O(1) route map and starts the Tokio runtime on a background thread.
+  #[napi]
+  pub fn listen(&self) -> Result<()> {
+    // Build O(1) lookup map: method_id → path → handler
+    let mut route_map: HashMap<u8, HashMap<Box<[u8]>, AsyncRouteFn>> = HashMap::new();
+    for (method_id, path, handler) in &self.routes {
+      route_map
+        .entry(*method_id)
+        .or_default()
+        .insert(path.clone(), handler.clone());
+    }
+    let route_map: RouteMap = Arc::new(route_map);
+
+    let rust_handler: tachyon_core::server::Handler =
+      Arc::new(move |req: &tachyon_http::http::Request<'_>| {
+        let method_id = method_to_id(req.method);
+
+        // Strip query string for routing lookup
+        let full_path = req.path_str();
+        let route_path = full_path.split('?').next().unwrap_or(full_path);
+
+        let handler = route_map
+          .get(&method_id)
+          .and_then(|m| m.get(route_path.as_bytes()));
+
+        if let Some(handler) = handler {
+          // Extract all request data synchronously — owned, so the future is 'static
+          let method = method_str(req.method).to_string();
+          let path = full_path.to_string();
+          let body = if req.body.is_empty() {
+            None
+          } else {
+            Some(match std::str::from_utf8(req.body) {
+              Ok(s) => s.to_string(),
+              Err(_) => String::from_utf8_lossy(req.body).into_owned(),
+            })
+          };
+          let headers = build_flat_headers(req);
+          let ts_req = TachyonRawRequest {
+            method,
+            path,
+            body,
+            headers,
+          };
+          let handler = handler.clone();
+          Box::pin(async move { handler(ts_req).await })
+        } else {
+          // 404 handled entirely in Rust — zero JS overhead
+          Box::pin(async move {
+            Box::new(|res: &mut tachyon_core::response::Response<'_>| {
+              res.json(404, b"{\"error\":\"not found\"}")
+            }) as tachyon_core::server::WriteFn
+          })
         }
-
-        // Park the coroutine until JS responds — zero CPU while parked.
-        // Safe: if callback already fired, park() returns immediately (permit-based).
-        may::coroutine::park();
-
-        match rx.try_recv().ok().flatten() {
-          Some(ts_res) => {
-            let status_code = ts_res.status.unwrap_or(200) as u16;
-            // Apply custom headers from the JS handler
-            if let Some(headers) = &ts_res.headers {
-              for h in headers {
-                res.header(h.name.as_bytes(), h.value.as_bytes());
-              }
-            }
-            // Priority: json > array > body
-            if let Some(fields) = &ts_res.json {
-              // Path 1: json → object {...} via zero-alloc JsonWriter
-              res.json_writer(status_code, |w| {
-                w.object(|w| {
-                  for f in fields {
-                    write_json_field(w, f);
-                  }
-                });
-              })
-            } else if let Some(elements) = &ts_res.array {
-              // Path 2: array → [...] via zero-alloc JsonWriter
-              res.json_writer(status_code, |w| {
-                w.array(|w| {
-                  for f in elements {
-                    write_json_field(w, f);
-                  }
-                });
-              })
-            } else {
-              // Path 3: body → uses content_type
-              let body = ts_res.body.as_deref().unwrap_or("");
-              match ts_res.content_type.as_deref().unwrap_or("json") {
-                "text" | "plain" => res.text(status_code, body.as_bytes()),
-                _ => res.json(status_code, body.as_bytes()),
-              }
-            }
-          }
-          // JS handler threw or channel disconnected
-          None => res.json(500, b"{\"error\":\"handler error\"}"),
-        }
-      },
-    );
+      });
 
     let server = tachyon_core::server::Server::new(self.config.clone());
-
-    // Run server on a background thread so Node's event loop isn't blocked
     std::thread::spawn(move || {
       if let Err(e) = server.run(rust_handler) {
         eprintln!("[tachyon] Server error: {}", e);

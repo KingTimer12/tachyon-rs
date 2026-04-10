@@ -14,7 +14,8 @@ pub struct TachyonRawRequest {
   pub method: String,
   pub path: String,
   pub body: Option<String>,
-  pub headers: Vec<TachyonRawHeader>,
+  /// Flat header string: "name\tvalue\nname2\tvalue2\n" — 1 alloc instead of 20+
+  pub headers: String,
 }
 
 /// Response from TypeScript handler.

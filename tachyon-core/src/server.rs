@@ -1,5 +1,6 @@
 use std::{
-    io::{Read, Write},
+    future::Future,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -7,48 +8,24 @@ use std::{
     time::Instant,
 };
 
-use may::{go, net::TcpListener};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
-use crate::{config::ServerConfig, response::Response, rio, safety, utils::apply_socket_config};
+use crate::{config::ServerConfig, response::Response, utils::apply_socket_config};
 
-/// Write response bytes using RIO zero-copy send if available, else standard write_all.
-/// For RIO, loops until all bytes are sent since a single send may be partial.
-fn rio_or_write(
-    rio_conn: &Option<rio::RioConn>,
-    write_buf_id: Option<i64>,
-    stream: &mut impl Write,
-    data: &[u8],
-) -> std::io::Result<()> {
-    if let (Some(rio), Some(wb_id)) = (rio_conn, write_buf_id) {
-        let mut sent = 0;
-        while sent < data.len() {
-            let n = rio.send(wb_id, sent as u32, (data.len() - sent) as u32)?;
-            if n == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::WriteZero,
-                    "RIO send returned 0",
-                ));
-            }
-            sent += n;
-        }
-        Ok(())
-    } else {
-        stream.write_all(data)
-    }
-}
+/// Write function returned by an async handler. Called synchronously after the future resolves.
+pub type WriteFn = Box<dyn FnOnce(&mut Response) -> usize + Send>;
 
-/// The handler function type. Receives a parsed request and a response builder.
-/// Returns the number of bytes written to the response buffer.
-///
-/// This is directly inspired by FaF's callback model:
-/// ```ignore
-/// // FaF: you get a buffer, fill it, return length
-/// fn callback(buf: &mut [u8]) -> usize { ... }
-///
-/// // tachyon: you get a parsed request + response builder
-/// fn handler(req: &Request, res: &mut Response) -> usize { ... }
-/// ```
-pub type Handler = Arc<dyn Fn(&tachyon_http::http::Request, &mut Response) -> usize + Send + Sync>;
+/// The handler function type. Takes a borrowed request, returns a future.
+/// The future resolves to a WriteFn that writes the HTTP response.
+/// This design avoids block_in_place — the async bridge uses rx.await instead.
+pub type Handler = Arc<
+    dyn for<'r> Fn(
+            &'r tachyon_http::http::Request<'r>,
+        ) -> Pin<Box<dyn Future<Output = WriteFn> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// The tachyon server.
 pub struct Server {
@@ -62,16 +39,13 @@ impl Server {
 
     /// Pre-initialize all lazy systems so the first real request is fast.
     /// Also pins each worker thread to its own CPU core (Linux only via sched_setaffinity).
-    fn warmup_pools(workers: usize) {
+    async fn warmup_pools(workers: usize) {
         use std::sync::atomic::AtomicI32;
         let cpu_counter = Arc::new(AtomicI32::new(0));
-        let (tx, rx) = std::sync::mpsc::channel();
+        let mut handles = Vec::with_capacity(workers * 2);
         for _ in 0..(workers * 2) {
-            let tx = tx.clone();
             let cpu_counter = cpu_counter.clone();
-            go!(move || {
-                // Pin this worker thread to a CPU core (once per thread).
-                // Thread-local flag ensures we only call sched_setaffinity once.
+            handles.push(tokio::spawn(async move {
                 thread_local! {
                     static PINNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
                 }
@@ -94,11 +68,11 @@ impl Server {
                     }
                 });
                 let _buf = tachyon_pool::pool::acquire();
-                let _ = tx.send(());
-            });
+            }));
         }
-        drop(tx);
-        for _ in rx.iter() {}
+        for h in handles {
+            let _ = h.await;
+        }
     }
 
     /// Convert a bind address like "0.0.0.0:3000" to "127.0.0.1:3000".
@@ -115,55 +89,39 @@ impl Server {
 
     /// Start the server with the given handler.
     ///
-    /// This blocks the current thread. Each incoming connection spawns
-    /// a May coroutine (via `go!`), which:
-    /// 1. Acquires a buffer from the thread-local pool (FaF pattern)
-    /// 2. Reads the request into it
-    /// 3. Parses zero-copy (FaF pattern)
-    /// 4. Calls your handler
-    /// 5. Writes the response
-    /// 6. Returns the buffer to the pool (automatic via RAII)
+    /// Creates a multi-threaded Tokio runtime and blocks until the server stops.
     pub fn run(self, handler: Handler) -> std::io::Result<()> {
-        // Configure May's coroutine runtime
-        may::config()
-            .set_workers(self.config.workers)
-            .set_stack_size(self.config.coroutine_stack_size);
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(self.config.workers)
+            .enable_io()
+            .build()?;
+        rt.block_on(self.run_inner(handler))
+    }
 
-        let listener = TcpListener::bind(&self.config.bind_addr)?;
+    async fn run_inner(self, handler: Handler) -> std::io::Result<()> {
+        let listener = TcpListener::bind(&self.config.bind_addr).await?;
 
-        // Apply socket tuning from config
         apply_socket_config(&listener, &self.config.socket);
 
-        // Initialize RIO (Windows Registered I/O) for zero-copy networking.
-        // On non-Windows this is a no-op that returns false.
-        let use_rio = rio::init();
-        if use_rio {
-            eprintln!("[tachyon] RIO (Registered I/O) enabled for zero-copy networking");
-        }
-
-        // Start the Date header cache (updated once per second, read by all workers)
         crate::date::start_date_cache();
 
         let config = Arc::new(self.config);
 
         // Phase 1: Warm buffer pools on all worker threads
         let warmup_start = Instant::now();
-        Self::warmup_pools(config.workers);
+        Self::warmup_pools(config.workers).await;
         eprintln!("[tachyon] Pool warmup: {:?}", warmup_start.elapsed());
 
-        // Phase 2: Send multiple warmup requests through the full pipeline.
-        // This warms: accept path, IOCP, buffer pools, handler (JS JIT), write path.
-        // Multiple iterations trigger V8's TurboFan JIT optimization tiers.
+        // Phase 2: Warmup requests through the full pipeline to trigger V8 JIT.
         let loopback_addr = Self::to_loopback(&config.bind_addr);
         let warmup_count: usize = 10;
         let warmup_completed = Arc::new(AtomicUsize::new(0));
         let warmup_ready = Arc::new(AtomicBool::new(false));
 
-        // Spawn a thread that sends warmup requests sequentially.
-        // Each request uses Connection: close, so the accept loop handles them one by one.
         let warmup_completed2 = warmup_completed.clone();
         let warmup_ready2 = warmup_ready.clone();
         std::thread::spawn(move || {
+            use std::io::{Read, Write};
             let t = Instant::now();
             for i in 0..warmup_count {
                 match std::net::TcpStream::connect(&loopback_addr) {
@@ -192,19 +150,15 @@ impl Server {
             warmup_ready2.store(true, Ordering::Release);
         });
 
-        // The accept loop processes warmup requests first, then real requests.
-        // We track warmup state so we can print "Listening" only after warmup is done.
         let mut warmup_printed = false;
 
-        while let Ok((mut stream, _addr)) = listener.accept() {
-            // Print "Listening" once warmup is complete
+        loop {
+            let (stream, _addr) = listener.accept().await?;
+
             if !warmup_printed && warmup_ready.load(Ordering::Acquire) {
                 eprintln!(
-                    "[tachyon] Listening on {} ({} workers, {}KB stack, {} buffers/worker)",
-                    config.bind_addr,
-                    config.workers,
-                    config.coroutine_stack_size / 1024,
-                    config.buffers_per_worker,
+                    "[tachyon] Listening on {} ({} workers, {} buffers/worker)",
+                    config.bind_addr, config.workers, config.buffers_per_worker,
                 );
                 warmup_printed = true;
             }
@@ -212,7 +166,7 @@ impl Server {
             let handler = handler.clone();
             let config = config.clone();
 
-            go!(move || {
+            tokio::spawn(async move {
                 if config.socket.tcp_nodelay {
                     let _ = stream.set_nodelay(true);
                 }
@@ -222,80 +176,42 @@ impl Server {
                 let sec_headers = config.security.as_bytes();
                 let comp_threshold = config.compression_threshold;
 
-                // Set up RIO zero-copy path if available (Windows only).
-                // We get the raw socket handle, create a RIO context, and register
-                // both buffers so the kernel can DMA directly into/from them.
-                let rio_conn = if use_rio {
-                    #[cfg(windows)]
-                    let handle = {
-                        use std::os::windows::io::AsRawSocket;
-                        stream.as_raw_socket() as i64
-                    };
-                    #[cfg(not(windows))]
-                    let handle: i64 = -1;
-                    rio::RioConn::new(handle)
-                } else {
-                    None
-                };
+                // Split into owned read/write halves to allow concurrent use
+                let (mut reader, mut writer) = stream.into_split();
 
-                let read_buf_id = if rio_conn.is_some() {
-                    rio::register_buffer(read_buf.as_write_buf())
-                } else {
-                    None
-                };
-                let write_buf_id = if rio_conn.is_some() {
-                    rio::register_buffer(write_buf.as_write_buf())
-                } else {
-                    None
-                };
-
-                // Pipelining state: track unconsumed bytes in read_buf.
-                // After processing a request, leftover bytes may contain the
-                // next pipelined request — process it without a syscall.
                 let mut buf_offset: usize = 0;
                 let mut buf_len: usize = 0;
 
                 'conn: loop {
-                    // If no unconsumed data, read from the socket
                     if buf_offset >= buf_len {
                         buf_offset = 0;
-                        let n = if let (Some(rio), Some(rb_id)) = (&rio_conn, read_buf_id) {
-                            match rio.recv(rb_id, 0, read_buf.capacity() as u32) {
-                                Ok(0) => break,
-                                Ok(n) => n,
-                                Err(_) => break,
-                            }
-                        } else {
-                            match stream.read(read_buf.as_write_buf()) {
-                                Ok(0) => break,
-                                Ok(n) => n,
-                                Err(_) => break,
-                            }
+                        let n = match reader.read(read_buf.as_write_buf()).await {
+                            Ok(0) => break,
+                            Ok(n) => n,
+                            Err(_) => break,
                         };
                         buf_len = n;
                         read_buf.set_len(n);
                     }
 
-                    // Process all complete requests in the buffer (pipelining)
                     loop {
                         let data = &read_buf.as_write_buf()[buf_offset..buf_len];
                         if data.is_empty() {
-                            break; // Need more data → outer loop will read
+                            break;
                         }
 
                         let request = match tachyon_http::parser::parse(data) {
                             tachyon_http::parser::ParseResult::Complete(req) => req,
                             tachyon_http::parser::ParseResult::Incomplete => {
-                                // Partial request: shift unconsumed bytes to front, read more
                                 if buf_offset > 0 {
                                     let remaining = buf_len - buf_offset;
                                     let wbuf = read_buf.as_write_buf();
                                     wbuf.copy_within(buf_offset..buf_len, 0);
                                     buf_offset = 0;
                                     read_buf.set_len(remaining);
-                                    // Read more data appending after remaining bytes
-                                    let n = match stream
+                                    let n = match reader
                                         .read(&mut read_buf.as_write_buf()[remaining..])
+                                        .await
                                     {
                                         Ok(0) => break 'conn,
                                         Ok(n) => n,
@@ -304,7 +220,7 @@ impl Server {
                                     buf_len = remaining + n;
                                     read_buf.set_len(buf_len);
                                 }
-                                break; // Re-enter inner loop with more data
+                                break;
                             }
                             tachyon_http::parser::ParseResult::Error(_) => {
                                 let mut res = Response::new(
@@ -314,16 +230,13 @@ impl Server {
                                     comp_threshold,
                                 );
                                 res.text(400, b"Bad Request");
-                                let _ =
-                                    rio_or_write(&rio_conn, write_buf_id, &mut stream, res.data());
+                                let _ = writer.write_all(res.data()).await;
                                 break 'conn;
                             }
                         };
 
-                        // Advance past this request's bytes
                         buf_offset += request.consumed();
 
-                        // Check if client accepts gzip encoding
                         let accepts_gzip = request
                             .header(b"accept-encoding")
                             .map(|v| v.windows(4).any(|w| w == b"gzip"))
@@ -335,13 +248,15 @@ impl Server {
                             accepts_gzip,
                             comp_threshold,
                         );
+                        let write = handler(&request).await;
                         if config.catch_panics {
-                            let result = safety::catch_handler_mut(|| {
-                                let n = handler(&request, &mut res);
-                                Ok(n)
-                            });
-                            if let Err(e) = result.into_result() {
-                                eprintln!("[tachyon] Handler failed: {}", e);
+                            use std::panic::{AssertUnwindSafe, catch_unwind};
+                            if catch_unwind(AssertUnwindSafe(|| {
+                                write(&mut res);
+                            }))
+                            .is_err()
+                            {
+                                eprintln!("[tachyon] Handler panicked");
                                 res = Response::new(
                                     write_buf.as_write_buf(),
                                     sec_headers,
@@ -351,22 +266,13 @@ impl Server {
                                 res.json(500, b"{\"error\":\"internal\"}");
                             }
                         } else {
-                            handler(&request, &mut res);
+                            write(&mut res);
                         };
 
-                        // WRITE response
-                        let send_data = res.data();
-                        if res.is_overflow() {
-                            if stream.write_all(send_data).is_err() {
-                                break 'conn;
-                            }
-                        } else if rio_or_write(&rio_conn, write_buf_id, &mut stream, send_data)
-                            .is_err()
-                        {
+                        if writer.write_all(res.data()).await.is_err() {
                             break 'conn;
                         }
 
-                        // Check Connection: close or HTTP/1.0
                         if request.version_minor == 0
                             || request
                                 .header(b"connection")
@@ -377,18 +283,7 @@ impl Server {
                         }
                     }
                 }
-
-                // Cleanup: deregister buffers before they return to the pool.
-                // RioConn is dropped automatically, destroying the context.
-                if let Some(id) = read_buf_id {
-                    rio::deregister_buffer(id);
-                }
-                if let Some(id) = write_buf_id {
-                    rio::deregister_buffer(id);
-                }
             });
         }
-
-        Ok(())
     }
 }

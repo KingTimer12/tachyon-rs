@@ -1,0 +1,26 @@
+{
+  "name": "benchmark",
+  "module": "run.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "bench": "bun run run.ts",
+    "bench:quick": "bun run run.ts --duration 5 --connections 50"
+  },
+  "dependencies": {
+    "autocannon": "^7",
+    "pidusage": "^3",
+    "express": "^5",
+    "fastify": "^5",
+    "elysia": "latest",
+    "tachyon-rs": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/express": "^5",
+    "@types/pidusage": "^2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

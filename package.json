@@ -5,13 +5,15 @@
   "workspaces": [
     "tachyon-library",
     "tachyon-napi",
-    "example"
+    "example",
+    "benchmark"
   ],
   "scripts": {
     "artifacts": "napi artifacts",
-    "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
+    "bench": "bun --bun run benchmark/run.ts",
     "example": "cd example && bun dev",
     "build": "cd tachyon-napi && napi build --platform --release",
+    "build:lib": "cd tachyon-library && bun run build",
     "build:debug": "cd tachyon-napi && napi build --platform",
     "format": "run-p format:prettier format:rs format:toml",
     "format:prettier": "prettier . -w",
