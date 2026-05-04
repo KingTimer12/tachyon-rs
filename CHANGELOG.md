@@ -4,10 +4,24 @@
 
 ### Bug Fixes
 
+- Problemas no lint ([8f5ce16](https://github.com/KingTimer12/tachyon-rs/commit/8f5ce16fcd4b7725bae9254d6ce5ec204a2b4653))
+- Problemas no lint ([c24f6a5](https://github.com/KingTimer12/tachyon-rs/commit/c24f6a5f5f7e8eab9859eaa82c5c6a44da165a72))
+- Otimizações e melhorias no recursos computacionais usados ([aa6b24e](https://github.com/KingTimer12/tachyon-rs/commit/aa6b24ed297c069d11f4d85c81cf52b7fa717e7c))
+
+### Miscellaneous
+
+- Lock updated ([d40317b](https://github.com/KingTimer12/tachyon-rs/commit/d40317bc65458c21b2d9ce210276f67b546e1208))
+- Better response speed and added banchmark ([7f46fac](https://github.com/KingTimer12/tachyon-rs/commit/7f46fac08ba42159d65bc2417ae925a6d72e87c2))
+
+## [0.2.17] - 2026-03-17
+
+### Bug Fixes
+
 - ContentType for text ([c9bd48c](https://github.com/KingTimer12/tachyon-rs/commit/c9bd48c19bf56b8de48684d8f18bbd194e90cfbd))
 
 ### Miscellaneous
 
+- Release v0.2.17 ([3d0ae68](https://github.com/KingTimer12/tachyon-rs/commit/3d0ae687e6597c17dcac9422b0635bd55e8a87dc))
 - New version updated ([3573599](https://github.com/KingTimer12/tachyon-rs/commit/35735996e345fb8b5583cf4f2b61511cf4aa1fa4))
 
 ### Build
