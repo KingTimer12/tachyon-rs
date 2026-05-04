@@ -26,7 +26,6 @@ type AsyncRouteFn = Arc<
 /// Map: method_id → path_bytes → handler
 type RouteMap = Arc<HashMap<u8, HashMap<Box<[u8]>, AsyncRouteFn>>>;
 
-
 /// Zero-alloc method → u8 id for HashMap key.
 #[inline(always)]
 fn method_to_id(m: tachyon_http::methods::Method) -> u8 {

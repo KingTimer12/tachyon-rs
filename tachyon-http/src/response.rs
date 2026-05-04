@@ -16,8 +16,7 @@ pub const CONNECTION_KEEP: &[u8] = b"Connection: keep-alive\r\n";
 pub const ENCODING_GZIP: &[u8] = b"Content-Encoding: gzip\r\n";
 pub const VARY_ACCEPT_ENCODING: &[u8] = b"Vary: Accept-Encoding\r\n";
 /// Pre-concatenated gzip headers — single memcpy instead of two.
-pub const GZIP_HEADERS: &[u8] =
-    b"Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n";
+pub const GZIP_HEADERS: &[u8] = b"Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n";
 pub const CRLF: &[u8] = b"\r\n";
 
 const CL_PREFIX: &[u8] = b"Content-Length: ";

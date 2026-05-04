@@ -58,18 +58,17 @@ impl<'a> Request<'a> {
     pub fn connection_flags(&self) -> (bool, bool) {
         let mut gzip = false;
         let mut close = false;
-        for h in &self.headers[..self.header_count] {
-            if let Some(h) = h {
-                if !gzip && h.name.len() == 15 && eq_ignore_ascii_case(h.name, b"accept-encoding")
-                {
-                    gzip = h.value.windows(4).any(|w| w == b"gzip");
-                } else if !close && h.name.len() == 10 && eq_ignore_ascii_case(h.name, b"connection")
-                {
-                    close = h.value == b"close";
-                }
-                if gzip && close {
-                    break;
-                }
+        for h in self.headers[..self.header_count].iter().flatten() {
+            if !gzip && h.name.len() == 15 && eq_ignore_ascii_case(h.name, b"accept-encoding") {
+                gzip = h.value.windows(4).any(|w| w == b"gzip");
+            } else if !close
+                && h.name.len() == 10
+                && eq_ignore_ascii_case(h.name, b"connection")
+            {
+                close = h.value == b"close";
+            }
+            if gzip && close {
+                break;
             }
         }
         (gzip, close)

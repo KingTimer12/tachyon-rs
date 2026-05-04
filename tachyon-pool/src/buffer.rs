@@ -107,7 +107,9 @@ impl BufGuard {
             // SAFETY: All bytes up to capacity were initialized at allocation time
             // (vec![0u8; buf_size]). After pool round-trip, clear() sets len=0 but
             // memory remains allocated and initialized. Callers overwrite via read().
-            unsafe { buf.set_len(cap); }
+            unsafe {
+                buf.set_len(cap);
+            }
         }
         buf.as_mut_slice()
     }

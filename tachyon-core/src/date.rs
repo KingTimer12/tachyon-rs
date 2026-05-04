@@ -16,8 +16,8 @@ fn format_date_header() -> Vec<u8> {
 
     const DAYS: [&[u8]; 7] = [b"Sun", b"Mon", b"Tue", b"Wed", b"Thu", b"Fri", b"Sat"];
     const MONTHS: [&[u8]; 12] = [
-        b"Jan", b"Feb", b"Mar", b"Apr", b"May", b"Jun",
-        b"Jul", b"Aug", b"Sep", b"Oct", b"Nov", b"Dec",
+        b"Jan", b"Feb", b"Mar", b"Apr", b"May", b"Jun", b"Jul", b"Aug", b"Sep", b"Oct", b"Nov",
+        b"Dec",
     ];
 
     let secs_of_day = (now % 86400) as u32;

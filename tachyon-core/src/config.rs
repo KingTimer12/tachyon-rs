@@ -186,4 +186,3 @@ impl ServerConfig {
         self
     }
 }
-

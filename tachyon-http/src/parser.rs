@@ -7,7 +7,7 @@ use crate::{
 /// more bytes we need.
 #[derive(Debug)]
 pub enum ParseResult<'a> {
-    Complete(Request<'a>),
+    Complete(Box<Request<'a>>),
     Incomplete,
     Error(ParseError),
 }
@@ -107,5 +107,5 @@ pub fn parse(buf: &[u8]) -> ParseResult<'_> {
 
     req.body = &buf[body_offset..body_end];
 
-    ParseResult::Complete(req)
+    ParseResult::Complete(Box::new(req))
 }

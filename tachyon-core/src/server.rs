@@ -114,10 +114,7 @@ impl Server {
             let (stream, _addr) = listener.accept().await?;
 
             if !warmup_printed && warmup_ready.load(Ordering::Acquire) {
-                eprintln!(
-                    "[tachyon] Listening on {}",
-                    config.bind_addr,
-                );
+                eprintln!("[tachyon] Listening on {}", config.bind_addr,);
                 warmup_printed = true;
             }
 

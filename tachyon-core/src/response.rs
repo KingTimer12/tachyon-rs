@@ -58,8 +58,7 @@ impl<'a> Response<'a> {
     fn compress_gzip(body: &[u8]) -> Option<Vec<u8>> {
         // Compressed output is typically 30-60% of input. Start at half to reduce
         // over-allocation while avoiding realloc in most cases.
-        let mut encoder =
-            GzEncoder::new(Vec::with_capacity(body.len() / 2), Compression::fast());
+        let mut encoder = GzEncoder::new(Vec::with_capacity(body.len() / 2), Compression::fast());
         if encoder.write_all(body).is_err() {
             return None;
         }
