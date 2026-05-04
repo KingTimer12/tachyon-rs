@@ -117,7 +117,13 @@ pub fn parse_header(buf: &[u8]) -> Option<(Header<'_>, &[u8])> {
 
 #[inline(always)]
 pub fn find_crlf(buf: &[u8]) -> Option<usize> {
-    (0..buf.len().saturating_sub(1)).find(|&i| buf[i] == b'\r' && buf[i + 1] == b'\n')
+    let len = buf.len().saturating_sub(1);
+    for i in 0..len {
+        if buf[i] == b'\r' && buf[i + 1] == b'\n' {
+            return Some(i);
+        }
+    }
+    None
 }
 
 #[inline(always)]

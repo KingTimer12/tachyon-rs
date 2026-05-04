@@ -1,5 +1,8 @@
 #![deny(clippy::all)]
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -22,6 +25,7 @@ type AsyncRouteFn = Arc<
 
 /// Map: method_id → path_bytes → handler
 type RouteMap = Arc<HashMap<u8, HashMap<Box<[u8]>, AsyncRouteFn>>>;
+
 
 /// Zero-alloc method → u8 id for HashMap key.
 #[inline(always)]
@@ -69,7 +73,12 @@ fn str_to_method_id(s: &str) -> u8 {
 
 /// Build flat headers string: "name\tvalue\n..." — 1 allocation for the whole header block.
 fn build_flat_headers(req: &tachyon_http::http::Request<'_>) -> String {
-  let mut s = String::new();
+  let cap = req.headers[..req.header_count]
+    .iter()
+    .filter_map(|h| h.as_ref())
+    .map(|h| h.name.len() + h.value.len() + 2)
+    .sum();
+  let mut s = String::with_capacity(cap);
   for h in &req.headers[..req.header_count] {
     if let Some(h) = h.as_ref() {
       let name = unsafe { std::str::from_utf8_unchecked(h.name) };
@@ -161,8 +170,6 @@ fn make_write_fn(ts_res_opt: Option<TachyonRawResponse>) -> tachyon_core::server
 #[derive(Debug, Clone)]
 pub struct TachyonRawConfig {
   pub bind_addr: Option<String>,
-  pub workers: Option<u32>,
-  pub buffers_per_worker: Option<u32>,
   pub buffer_size: Option<u32>,
   pub timeout_secs: Option<u32>,
   pub tcp_nodelay: Option<bool>,
@@ -173,6 +180,7 @@ pub struct TachyonRawConfig {
   pub send_buf_size: Option<i32>,
   pub security: Option<String>,
   pub compression_threshold: Option<i32>,
+  pub catch_panics: Option<bool>,
 }
 
 impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
@@ -180,13 +188,6 @@ impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
     let mut config = tachyon_core::config::ServerConfig::new();
     if let Some(addr) = ts.bind_addr {
       config = config.bind(&addr);
-    }
-    if let Some(w) = ts.workers {
-      config = config.workers(w as usize);
-    }
-    if let Some(count) = ts.buffers_per_worker {
-      let size = ts.buffer_size.unwrap_or(8192) as usize;
-      config = config.buffer_pool(count as usize, size);
     }
     if let Some(t) = ts.timeout_secs {
       config = config.timeout(std::time::Duration::from_secs(t as u64));
@@ -223,6 +224,9 @@ impl From<TachyonRawConfig> for tachyon_core::config::ServerConfig {
       } else {
         config = config.compression(v as usize);
       }
+    }
+    if let Some(v) = ts.catch_panics {
+      config = config.catch_panics(v);
     }
     config
   }
@@ -293,7 +297,7 @@ impl TachyonRawServer {
   /// Builds an O(1) route map and starts the Tokio runtime on a background thread.
   #[napi]
   pub fn listen(&self) -> Result<()> {
-    // Build O(1) lookup map: method_id → path → handler
+    // Build O(1) lookup maps
     let mut route_map: HashMap<u8, HashMap<Box<[u8]>, AsyncRouteFn>> = HashMap::new();
     for (method_id, path, handler) in &self.routes {
       route_map

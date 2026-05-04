@@ -69,12 +69,9 @@ pub struct ServerConfig {
     /// Address to bind (default: "0.0.0.0:3000")
     pub bind_addr: String,
 
-    /// Number of worker threads. Default: number of CPU cores.
-    pub workers: usize,
-
-    /// Buffer pool: number of pre-allocated buffers per worker thread.
+    /// Buffer pool: number of pre-allocated buffers.
     /// Higher = more memory upfront, fewer allocation misses under load.
-    pub buffers_per_worker: usize,
+    pub pool_buffers: usize,
 
     /// Buffer pool: size of each buffer in bytes.
     /// Should be >= your largest expected request/response.
@@ -107,8 +104,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             bind_addr: "0.0.0.0:3000".to_string(),
-            workers: num_cpus(),
-            buffers_per_worker: 128,
+            pool_buffers: 32,
             buffer_size: 8 * 1024,
             handler_timeout: Duration::from_secs(30),
             catch_panics: true,
@@ -129,13 +125,8 @@ impl ServerConfig {
         self
     }
 
-    pub fn workers(mut self, n: usize) -> Self {
-        self.workers = n.max(1);
-        self
-    }
-
     pub fn buffer_pool(mut self, count: usize, size: usize) -> Self {
-        self.buffers_per_worker = count;
+        self.pool_buffers = count;
         self.buffer_size = size;
         self
     }
@@ -196,8 +187,3 @@ impl ServerConfig {
     }
 }
 
-fn num_cpus() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-}

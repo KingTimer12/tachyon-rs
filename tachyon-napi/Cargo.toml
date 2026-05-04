@@ -15,6 +15,7 @@ tachyon-core = { workspace = true }
 tachyon-http = { workspace = true }
 tachyon-pool = { workspace = true }
 tokio = { workspace = true }
+mimalloc = { workspace = true }
 
 [build-dependencies]
 napi-build = "2"

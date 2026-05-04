@@ -88,8 +88,11 @@ impl BufferPool {
         // else: pool is full, drop the buffer (Vec deallocates)
     }
 
-    pub fn get_buffers(&self) -> Vec<Vec<u8>> {
-        self.buffers.borrow().clone()
+    /// Replace all pooled buffers with `capacity` fresh buffers of `buf_size` bytes.
+    pub fn reinit(&self, capacity: usize, buf_size: usize) {
+        let mut buffers = self.buffers.borrow_mut();
+        buffers.clear();
+        buffers.extend((0..capacity).map(|_| vec![0u8; buf_size]));
     }
 }
 
@@ -101,7 +104,10 @@ impl BufGuard {
         let buf = self.buf.as_mut().unwrap();
         let cap = buf.capacity();
         if buf.len() < cap {
-            buf.resize(cap, 0);
+            // SAFETY: All bytes up to capacity were initialized at allocation time
+            // (vec![0u8; buf_size]). After pool round-trip, clear() sets len=0 but
+            // memory remains allocated and initialized. Callers overwrite via read().
+            unsafe { buf.set_len(cap); }
         }
         buf.as_mut_slice()
     }

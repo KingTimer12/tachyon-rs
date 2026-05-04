@@ -8,7 +8,7 @@ Native Rust HTTP server with Node.js/Bun bindings. Built for speed, security, an
 
 | | tachyon | Express | Fastify | Elysia |
 |---|---|---|---|---|
-| Runtime | Rust (Tokio workers) | Node.js | Node.js | Bun |
+| Runtime | Rust (Tokio async) | Node.js | Node.js | Bun |
 | HTTP parser | SIMD C++ (zero-copy) | llhttp (C) | llhttp (C) | llhttp (C) |
 | Routing | Rust O(1) HashMap | JS trie | JS radix | JS radix |
 | Buffer alloc | Pre-allocated pool (0 alloc/req) | GC-managed | GC-managed | GC-managed |
@@ -102,10 +102,10 @@ new Tachyon({ compressionThreshold: -1 })   // disable compression
 HTTP Request
     |
     v
-[Rust] TcpListener (Tokio multi-thread, N workers)
+[Rust] TcpListener (Tokio single-thread async)
     |
     v
-[Rust] Buffer Pool (pre-allocated, thread-local, RAII)
+[Rust] Buffer Pool (pre-allocated, RAII)
     |
     v
 [C++] SIMD HTTP Parser (AVX2/SSE4.2/NEON, zero-copy)
@@ -115,7 +115,7 @@ HTTP Request
     |                |
     |           404 in Rust (zero JS call)
     v
-[Rust → JS] NAPI bridge (ThreadsafeFunction, rx.await — no thread block)
+[Rust → JS] NAPI bridge (ThreadsafeFunction, rx.await — no blocking)
     |
     v
 [JS] Plugin hooks (pre) → Route handler → Plugin hooks (pos)
@@ -128,7 +128,7 @@ HTTP Request
 
 - **Rust routing**: each route has its own JS function registered at startup. Dispatch is a two-level `HashMap<method_id, HashMap<path, handler>>` lookup — O(1), no JS overhead.
 - **Flat headers**: request headers are passed as a single `"name\tvalue\n"` string (1 allocation) instead of a `Vec` of structs (20+ allocations per request). Parsed lazily in JS only if accessed.
-- **Async bridge**: uses `rx.await` (Tokio oneshot channel) instead of `block_in_place`, so worker threads are never blocked — no thread explosion under load.
+- **Async bridge**: uses `rx.await` (Tokio oneshot channel) instead of `block_in_place`, so the event loop is never blocked — no thread explosion under load.
 
 ## Structure
 
@@ -136,7 +136,7 @@ HTTP Request
 tachyon-rs/
   tachyon-core/       Server, config, response builder
   tachyon-http/       Zero-copy HTTP parser, JSON writer
-  tachyon-pool/       Thread-local buffer pool with RAII
+  tachyon-pool/       Buffer pool with RAII
   tachyon-simd/       C++ bridge (SIMD scan, socket tuning)
   tachyon-napi/       NAPI bindings (route registration, request bridge)
   tachyon-library/    TypeScript API (Tachyon class, plugins, routing)

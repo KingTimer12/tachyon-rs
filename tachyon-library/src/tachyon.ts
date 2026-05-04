@@ -68,9 +68,9 @@ class Tachyon {
   public listen(port: number) {
     const server = new TachyonRawServer({
       bindAddr: '0.0.0.0:' + port,
-      workers: this.config.workers ?? 4,
       security: this.config.security ?? 'basic',
       compressionThreshold: this.config.compressionThreshold,
+      catchPanics: this.config.catchPanics,
     })
 
     const plugins = this.plugins

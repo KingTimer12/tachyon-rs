@@ -37,44 +37,6 @@ impl Server {
         Self { config }
     }
 
-    /// Pre-initialize all lazy systems so the first real request is fast.
-    /// Also pins each worker thread to its own CPU core (Linux only via sched_setaffinity).
-    async fn warmup_pools(workers: usize) {
-        use std::sync::atomic::AtomicI32;
-        let cpu_counter = Arc::new(AtomicI32::new(0));
-        let mut handles = Vec::with_capacity(workers * 2);
-        for _ in 0..(workers * 2) {
-            let cpu_counter = cpu_counter.clone();
-            handles.push(tokio::spawn(async move {
-                thread_local! {
-                    static PINNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-                }
-                PINNED.with(|pinned| {
-                    if !pinned.get() {
-                        pinned.set(true);
-                        #[cfg(feature = "simd")]
-                        {
-                            let cpu_id = cpu_counter.fetch_add(1, Ordering::Relaxed);
-                            let err = tachyon_simd::set_cpu_affinity(cpu_id);
-                            if err != 0 {
-                                eprintln!(
-                                    "[tachyon] CPU affinity warning for core {}: errno {}",
-                                    cpu_id, -err
-                                );
-                            }
-                        }
-                        #[cfg(not(feature = "simd"))]
-                        let _ = &cpu_counter;
-                    }
-                });
-                let _buf = tachyon_pool::pool::acquire();
-            }));
-        }
-        for h in handles {
-            let _ = h.await;
-        }
-    }
-
     /// Convert a bind address like "0.0.0.0:3000" to "127.0.0.1:3000".
     fn to_loopback(bind_addr: &str) -> String {
         if let Some(pos) = bind_addr.rfind(':') {
@@ -89,11 +51,11 @@ impl Server {
 
     /// Start the server with the given handler.
     ///
-    /// Creates a multi-threaded Tokio runtime and blocks until the server stops.
+    /// Creates a single-threaded Tokio runtime and blocks until the server stops.
     pub fn run(self, handler: Handler) -> std::io::Result<()> {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(self.config.workers)
+        let rt = tokio::runtime::Builder::new_current_thread()
             .enable_io()
+            .enable_time()
             .build()?;
         rt.block_on(self.run_inner(handler))
     }
@@ -107,12 +69,7 @@ impl Server {
 
         let config = Arc::new(self.config);
 
-        // Phase 1: Warm buffer pools on all worker threads
-        let warmup_start = Instant::now();
-        Self::warmup_pools(config.workers).await;
-        eprintln!("[tachyon] Pool warmup: {:?}", warmup_start.elapsed());
-
-        // Phase 2: Warmup requests through the full pipeline to trigger V8 JIT.
+        // Warmup requests through the full pipeline to trigger V8 JIT.
         let loopback_addr = Self::to_loopback(&config.bind_addr);
         let warmup_count: usize = 10;
         let warmup_completed = Arc::new(AtomicUsize::new(0));
@@ -120,17 +77,18 @@ impl Server {
 
         let warmup_completed2 = warmup_completed.clone();
         let warmup_ready2 = warmup_ready.clone();
-        std::thread::spawn(move || {
-            use std::io::{Read, Write};
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            use tokio::net::TcpStream;
             let t = Instant::now();
             for i in 0..warmup_count {
-                match std::net::TcpStream::connect(&loopback_addr) {
+                match TcpStream::connect(&loopback_addr).await {
                     Ok(mut s) => {
                         let _ = s.write_all(
                             b"GET /__tachyon_warmup HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
-                        );
+                        ).await;
                         let mut buf = [0u8; 512];
-                        let _ = s.read(&mut buf);
+                        let _ = s.read(&mut buf).await;
                         warmup_completed2.fetch_add(1, Ordering::Release);
                         if i == 0 {
                             eprintln!("[tachyon] First warmup round-trip: {:?}", t.elapsed());
@@ -157,8 +115,8 @@ impl Server {
 
             if !warmup_printed && warmup_ready.load(Ordering::Acquire) {
                 eprintln!(
-                    "[tachyon] Listening on {} ({} workers, {} buffers/worker)",
-                    config.bind_addr, config.workers, config.buffers_per_worker,
+                    "[tachyon] Listening on {}",
+                    config.bind_addr,
                 );
                 warmup_printed = true;
             }
@@ -176,8 +134,9 @@ impl Server {
                 let sec_headers = config.security.as_bytes();
                 let comp_threshold = config.compression_threshold;
 
-                // Split into owned read/write halves to allow concurrent use
-                let (mut reader, mut writer) = stream.into_split();
+                // No split needed — reads/writes are sequential in the connection loop.
+                // Avoids Arc allocation that into_split() requires.
+                let mut stream = stream;
 
                 let mut buf_offset: usize = 0;
                 let mut buf_len: usize = 0;
@@ -185,7 +144,7 @@ impl Server {
                 'conn: loop {
                     if buf_offset >= buf_len {
                         buf_offset = 0;
-                        let n = match reader.read(read_buf.as_write_buf()).await {
+                        let n = match stream.read(read_buf.as_write_buf()).await {
                             Ok(0) => break,
                             Ok(n) => n,
                             Err(_) => break,
@@ -209,7 +168,7 @@ impl Server {
                                     wbuf.copy_within(buf_offset..buf_len, 0);
                                     buf_offset = 0;
                                     read_buf.set_len(remaining);
-                                    let n = match reader
+                                    let n = match stream
                                         .read(&mut read_buf.as_write_buf()[remaining..])
                                         .await
                                     {
@@ -230,17 +189,15 @@ impl Server {
                                     comp_threshold,
                                 );
                                 res.text(400, b"Bad Request");
-                                let _ = writer.write_all(res.data()).await;
+                                let _ = stream.write_all(res.data()).await;
                                 break 'conn;
                             }
                         };
 
                         buf_offset += request.consumed();
 
-                        let accepts_gzip = request
-                            .header(b"accept-encoding")
-                            .map(|v| v.windows(4).any(|w| w == b"gzip"))
-                            .unwrap_or(false);
+                        // Single-pass: extract both flags at once instead of scanning headers twice
+                        let (accepts_gzip, connection_close) = request.connection_flags();
 
                         let mut res = Response::new(
                             write_buf.as_write_buf(),
@@ -269,16 +226,11 @@ impl Server {
                             write(&mut res);
                         };
 
-                        if writer.write_all(res.data()).await.is_err() {
+                        if stream.write_all(res.data()).await.is_err() {
                             break 'conn;
                         }
 
-                        if request.version_minor == 0
-                            || request
-                                .header(b"connection")
-                                .map(|v| v == b"close")
-                                .unwrap_or(false)
-                        {
+                        if request.version_minor == 0 || connection_close {
                             break 'conn;
                         }
                     }

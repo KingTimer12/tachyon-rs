@@ -7,7 +7,8 @@ pub const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 
 /// Default max number of pooled buffers per thread.
 /// The pool starts empty (lazy) and grows on demand up to this cap.
-pub const DEFAULT_POOL_CAPACITY: usize = 128;
+/// 32 buffers × 8KB = 256KB per thread — enough for typical concurrent connections.
+pub const DEFAULT_POOL_CAPACITY: usize = 32;
 
 // Thread-local pool access
 thread_local! {
@@ -22,12 +23,7 @@ pub fn acquire() -> BufGuard {
 /// Initialize the thread-local pool with custom parameters.
 /// Call this at the start of each worker thread if you need non-default sizing.
 pub fn init_thread_pool(capacity: usize, buf_size: usize) {
-    // Re-initialize the thread local by filling it
-    THREAD_POOL.with(|pool| {
-        let mut bufs = pool.get_buffers();
-        bufs.clear();
-        bufs.extend((0..capacity).map(|_| vec![0u8; buf_size]));
-    });
+    THREAD_POOL.with(|pool| pool.reinit(capacity, buf_size));
 }
 
 /// Return a buffer to the current thread's pool.

@@ -21,8 +21,6 @@ export declare class TachyonRawServer {
 /** Server configuration exposed to TypeScript. */
 export interface TachyonRawConfig {
   bindAddr?: string
-  workers?: number
-  buffersPerWorker?: number
   bufferSize?: number
   timeoutSecs?: number
   tcpNodelay?: boolean
@@ -33,6 +31,7 @@ export interface TachyonRawConfig {
   sendBufSize?: number
   security?: string
   compressionThreshold?: number
+  catchPanics?: boolean
 }
 
 /** A single HTTP header key-value pair. */

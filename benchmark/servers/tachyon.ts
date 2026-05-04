@@ -1,7 +1,7 @@
 import { makeUsers, makeLargePayload, PORT } from "../shared.ts";
 import { Tachyon, status } from 'tachyon-rs'
 
-const app = new Tachyon({ workers: 4, security: "none", compressionThreshold: -1 });
+const app = new Tachyon({ security: "none", compressionThreshold: -1, catchPanics: false });
 
 app.get("/text",  "Hello, World!");
 app.get("/json",  { message: "Hello, World!" });

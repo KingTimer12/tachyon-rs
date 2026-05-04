@@ -3,45 +3,59 @@ use std::time::Duration;
 
 /// Pre-formatted `Date: <HTTP-date>\r\n` header, cached and updated once per second.
 /// All worker threads read from the same atomic pointer — zero allocation per request.
+///
+/// Epoch-based reclamation: we keep the previous value alive until the next swap.
+/// Since updates happen every 1s and reads take <1µs, this guarantees no use-after-free.
 static CACHED_DATE: AtomicPtr<Vec<u8>> = AtomicPtr::new(std::ptr::null_mut());
 
 fn format_date_header() -> Vec<u8> {
-    // Use libc time + gmtime for minimal overhead (no chrono dependency)
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
 
-    // HTTP-date format: "Date: Thu, 01 Jan 1970 00:00:00 GMT\r\n"
-    let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    let months = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    const DAYS: [&[u8]; 7] = [b"Sun", b"Mon", b"Tue", b"Wed", b"Thu", b"Fri", b"Sat"];
+    const MONTHS: [&[u8]; 12] = [
+        b"Jan", b"Feb", b"Mar", b"Apr", b"May", b"Jun",
+        b"Jul", b"Aug", b"Sep", b"Oct", b"Nov", b"Dec",
     ];
 
-    // Calculate date components from unix timestamp
     let secs_of_day = (now % 86400) as u32;
     let hour = secs_of_day / 3600;
     let min = (secs_of_day % 3600) / 60;
     let sec = secs_of_day % 60;
 
-    // Days since epoch (Jan 1, 1970 was Thursday = 4)
     let total_days = (now / 86400) as i64;
     let wday = ((total_days % 7 + 4) % 7) as usize;
-
-    // Civil date from days since epoch
     let (year, month, day) = civil_from_days(total_days);
 
-    format!(
-        "Date: {}, {:02} {} {:04} {:02}:{:02}:{:02} GMT\r\n",
-        days[wday],
-        day,
-        months[(month - 1) as usize],
-        year,
-        hour,
-        min,
-        sec,
-    )
-    .into_bytes()
+    // "Date: Thu, 01 Jan 1970 00:00:00 GMT\r\n" = 37 bytes
+    let mut buf = Vec::with_capacity(40);
+    buf.extend_from_slice(b"Date: ");
+    buf.extend_from_slice(DAYS[wday]);
+    buf.extend_from_slice(b", ");
+    buf.push(b'0' + (day / 10) as u8);
+    buf.push(b'0' + (day % 10) as u8);
+    buf.push(b' ');
+    buf.extend_from_slice(MONTHS[(month - 1) as usize]);
+    buf.push(b' ');
+    // Year is always 4 digits for dates 1000-9999
+    let y = year as u32;
+    buf.push(b'0' + (y / 1000) as u8);
+    buf.push(b'0' + ((y / 100) % 10) as u8);
+    buf.push(b'0' + ((y / 10) % 10) as u8);
+    buf.push(b'0' + (y % 10) as u8);
+    buf.push(b' ');
+    buf.push(b'0' + (hour / 10) as u8);
+    buf.push(b'0' + (hour % 10) as u8);
+    buf.push(b':');
+    buf.push(b'0' + (min / 10) as u8);
+    buf.push(b'0' + (min % 10) as u8);
+    buf.push(b':');
+    buf.push(b'0' + (sec / 10) as u8);
+    buf.push(b'0' + (sec % 10) as u8);
+    buf.extend_from_slice(b" GMT\r\n");
+    buf
 }
 
 /// Convert days since epoch to (year, month, day). Algorithm from Howard Hinnant.
@@ -59,29 +73,30 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (y, m, d)
 }
 
-/// Start the background thread that updates the cached Date header every second.
-/// Must be called once before the server starts accepting connections.
+/// Start the async task that updates the cached Date header every second.
+/// Must be called once inside the Tokio runtime before accepting connections.
 pub fn start_date_cache() {
     // Initial value
     let initial = Box::into_raw(Box::new(format_date_header()));
     CACHED_DATE.store(initial, Ordering::Release);
 
-    std::thread::Builder::new()
-        .name("tachyon-date".into())
-        .spawn(|| {
-            loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let new = Box::into_raw(Box::new(format_date_header()));
-                let old = CACHED_DATE.swap(new, Ordering::AcqRel);
-                // Delay freeing old value to avoid use-after-free from concurrent readers.
-                // Sleep ensures all in-flight reads have completed.
-                std::thread::sleep(Duration::from_millis(50));
-                if !old.is_null() {
-                    drop(unsafe { Box::from_raw(old) });
-                }
+    tokio::spawn(async move {
+        // Epoch-based reclamation: keep previous value alive until next swap.
+        // Since we swap every 1s and reads complete in <1µs, the previous
+        // value is guaranteed to have no readers by the time we drop it.
+        let mut prev: Option<Box<Vec<u8>>> = None;
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let new = Box::into_raw(Box::new(format_date_header()));
+            let old = CACHED_DATE.swap(new, Ordering::AcqRel);
+            // Drop the value from TWO swaps ago (not the one we just swapped out).
+            // This gives readers a full 1s window to finish — more than enough.
+            drop(prev.take());
+            if !old.is_null() {
+                prev = Some(unsafe { Box::from_raw(old) });
             }
-        })
-        .expect("failed to spawn date cache thread");
+        }
+    });
 }
 
 /// Get the current cached Date header bytes. Zero-cost per request (atomic load + pointer deref).

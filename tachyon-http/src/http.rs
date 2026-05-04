@@ -52,6 +52,29 @@ impl<'a> Request<'a> {
         std::str::from_utf8(self.path).unwrap_or("/")
     }
 
+    /// Extract connection-related flags in a single pass over headers.
+    /// Returns (accepts_gzip, connection_close) to avoid scanning headers twice.
+    #[inline]
+    pub fn connection_flags(&self) -> (bool, bool) {
+        let mut gzip = false;
+        let mut close = false;
+        for h in &self.headers[..self.header_count] {
+            if let Some(h) = h {
+                if !gzip && h.name.len() == 15 && eq_ignore_ascii_case(h.name, b"accept-encoding")
+                {
+                    gzip = h.value.windows(4).any(|w| w == b"gzip");
+                } else if !close && h.name.len() == 10 && eq_ignore_ascii_case(h.name, b"connection")
+                {
+                    close = h.value == b"close";
+                }
+                if gzip && close {
+                    break;
+                }
+            }
+        }
+        (gzip, close)
+    }
+
     /// Total bytes consumed by this request (headers + body).
     /// Used for HTTP pipelining: the next request starts at `&buf[req.consumed()..]`.
     #[inline]

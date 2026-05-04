@@ -56,7 +56,10 @@ impl<'a> Response<'a> {
 
     /// Compress body with gzip. Returns None if compression doesn't shrink it.
     fn compress_gzip(body: &[u8]) -> Option<Vec<u8>> {
-        let mut encoder = GzEncoder::new(Vec::with_capacity(body.len()), Compression::fast());
+        // Compressed output is typically 30-60% of input. Start at half to reduce
+        // over-allocation while avoiding realloc in most cases.
+        let mut encoder =
+            GzEncoder::new(Vec::with_capacity(body.len() / 2), Compression::fast());
         if encoder.write_all(body).is_err() {
             return None;
         }
@@ -109,11 +112,9 @@ impl<'a> Response<'a> {
         if self.should_compress(body)
             && let Some(compressed) = Self::compress_gzip(body)
         {
-            // Body was compressed — add encoding headers
+            // Single memcpy for both gzip headers
             self.custom_headers
-                .extend_from_slice(tachyon_http::response::ENCODING_GZIP);
-            self.custom_headers
-                .extend_from_slice(tachyon_http::response::VARY_ACCEPT_ENCODING);
+                .extend_from_slice(tachyon_http::response::GZIP_HEADERS);
             return self.write_final(status_line, content_type, &compressed);
         }
         self.write_final(status_line, content_type, body)
