@@ -61,10 +61,7 @@ impl<'a> Request<'a> {
         for h in self.headers[..self.header_count].iter().flatten() {
             if !gzip && h.name.len() == 15 && eq_ignore_ascii_case(h.name, b"accept-encoding") {
                 gzip = h.value.windows(4).any(|w| w == b"gzip");
-            } else if !close
-                && h.name.len() == 10
-                && eq_ignore_ascii_case(h.name, b"connection")
-            {
+            } else if !close && h.name.len() == 10 && eq_ignore_ascii_case(h.name, b"connection") {
                 close = h.value == b"close";
             }
             if gzip && close {
