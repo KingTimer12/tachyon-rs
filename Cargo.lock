@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "tachyon-core"
-version = "0.2.17"
+version = "0.3.0"
 dependencies = [
  "flate2",
  "tachyon-http",
@@ -598,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "tachyon-http"
-version = "0.2.17"
+version = "0.3.0"
 dependencies = [
  "itoa",
  "ryu",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "tachyon-napi"
-version = "0.2.17"
+version = "0.3.0"
 dependencies = [
  "mimalloc",
  "napi",
@@ -621,11 +621,11 @@ dependencies = [
 
 [[package]]
 name = "tachyon-pool"
-version = "0.2.17"
+version = "0.3.0"
 
 [[package]]
 name = "tachyon-simd"
-version = "0.2.17"
+version = "0.3.0"
 dependencies = [
  "cxx",
  "cxx-build",
